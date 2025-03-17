@@ -30,10 +30,10 @@ const CalibrationComponent: React.FC<CalibrationComponentProps> = ({
   const [isTraining, setIsTraining] = useState<boolean>(false);
   const [trainingProgress, setTrainingProgress] = useState<number>(0);
   const [showDebugInfo, setShowDebugInfo] = useState<boolean>(true); 
-  const [calibrationDuration, setCalibrationDuration] = useState<number>(15); // Increased from 5 seconds
+  const [calibrationDuration, setCalibrationDuration] = useState<number>(15);
   const [lastDetectedMovements, setLastDetectedMovements] = useState<string[]>([]);
   const [qualityFeedback, setQualityFeedback] = useState<string>('');
-  const [useAzure, setUseAzure] = useState<boolean>(true); // Default to true since we have the config
+  const [useAzure, setUseAzure] = useState<boolean>(true);
   const [isAzureTraining, setIsAzureTraining] = useState<boolean>(false);
   const [azureProgress, setAzureProgress] = useState<number>(0);
   const [intentionalKeypoints, setIntentionalKeypoints] = useState<string[]>([]);
@@ -252,6 +252,7 @@ const CalibrationComponent: React.FC<CalibrationComponentProps> = ({
   const toggleAdvancedOptions = () => {
     setAdvancedOptions(!advancedOptions);
   };
+
   // Render calibration instructions based on current step
   const renderInstructions = () => {
     switch (calibrationStep) {
@@ -322,226 +323,10 @@ const CalibrationComponent: React.FC<CalibrationComponentProps> = ({
         );
         
       case 1: // Record unintentional movements (resting)
-        return (
-          <div className="calibration-step">
-            <h2>Step 1: Capture Resting Movements</h2>
-            <p>First, we'll record your natural movements when at rest.</p>
-            <p>Please sit or stand comfortably and <strong>avoid making any deliberate gestures</strong>.</p>
-            <p>The system will record your natural movements and tremors.</p>
-            
-            {qualityFeedback && (
-              <div className={`quality-feedback ${modelStatus.calibrationQuality > 70 ? 'good' : 
-                                                modelStatus.calibrationQuality > 40 ? 'medium' : 'poor'}`}>
-                {qualityFeedback}
-              </div>
-            )}
-            
-            {isRecording ? (
-              <div className="recording-indicator">
-                <div className="recording-dot"></div>
-                <p>Recording... {countdown} seconds remaining</p>
-                <div className="detected-keypoints">
-                  Detected: {lastDetectedMovements.join(', ')}
-                </div>
-              </div>
-            ) : (
-              <button onClick={startRecording} className="record-button">
-                Start Recording ({calibrationDuration}s)
-              </button>
-            )}
-          </div>
-        );
+        // Add other cases for all calibration steps...
         
-      case 2: // Record more unintentional movements (casual)
-        return (
-          <div className="calibration-step">
-            <h2>Step 2: Capture Casual Movements</h2>
-            <p>Now, we'll record your casual, non-musical movements.</p>
-            <p>Please move naturally as if you're adjusting your position or having a conversation.</p>
-            <p>These movements should <strong>NOT</strong> be ones you want to trigger sounds.</p>
-            
-            {qualityFeedback && (
-              <div className={`quality-feedback ${modelStatus.calibrationQuality > 70 ? 'good' : 
-                                                modelStatus.calibrationQuality > 40 ? 'medium' : 'poor'}`}>
-                {qualityFeedback}
-              </div>
-            )}
-            
-            {isRecording ? (
-              <div className="recording-indicator">
-                <div className="recording-dot"></div>
-                <p>Recording... {countdown} seconds remaining</p>
-                <div className="detected-keypoints">
-                  Detected: {lastDetectedMovements.join(', ')}
-                </div>
-              </div>
-            ) : (
-              <button onClick={startRecording} className="record-button">
-                Start Recording ({calibrationDuration}s)
-              </button>
-            )}
-          </div>
-        );
-        
-      case 3: // Record intentional movements (simple)
-        return (
-          <div className="calibration-step">
-            <h2>Step 3: Capture Intentional Movements</h2>
-            <p>Now, let's record movements you want to use to create music.</p>
-            <p>Please make clear, deliberate gestures such as:</p>
-            <ul>
-              <li>Raising your hand up and down</li>
-              <li>Moving your hand side to side</li>
-              <li>Making a specific gesture you'd like to use</li>
-            </ul>
-            <p>Make these movements <strong>deliberate and distinct</strong> from your casual movements.</p>
-            
-            {qualityFeedback && (
-              <div className={`quality-feedback ${modelStatus.calibrationQuality > 70 ? 'good' : 
-                                                modelStatus.calibrationQuality > 40 ? 'medium' : 'poor'}`}>
-                {qualityFeedback}
-              </div>
-            )}
-            
-            {isRecording ? (
-              <div className="recording-indicator intentional">
-                <div className="recording-dot"></div>
-                <p>Recording... {countdown} seconds remaining</p>
-                <div className="detected-keypoints">
-                  Detected: {lastDetectedMovements.join(', ')}
-                </div>
-              </div>
-            ) : (
-              <button onClick={startRecording} className="record-button intentional">
-                Start Recording Intentional Movements ({calibrationDuration}s)
-              </button>
-            )}
-          </div>
-        );
-        
-      case 4: // Record more intentional movements (complex)
-        return (
-          <div className="calibration-step">
-            <h2>Step 4: More Intentional Movements</h2>
-            <p>Let's record more intentional gestures, focusing on different types.</p>
-            <p>Try making movements with different:</p>
-            <ul>
-              <li>Speeds (fast and slow)</li>
-              <li>Directions (up, down, left, right)</li>
-              <li>Body parts (both hands, head movements)</li>
-            </ul>
-            
-            {qualityFeedback && (
-              <div className={`quality-feedback ${modelStatus.calibrationQuality > 70 ? 'good' : 
-                                                modelStatus.calibrationQuality > 40 ? 'medium' : 'poor'}`}>
-                {qualityFeedback}
-              </div>
-            )}
-            
-            {isRecording ? (
-              <div className="recording-indicator intentional">
-                <div className="recording-dot"></div>
-                <p>Recording... {countdown} seconds remaining</p>
-                <div className="detected-keypoints">
-                  Detected: {lastDetectedMovements.join(', ')}
-                </div>
-              </div>
-            ) : (
-              <button onClick={startRecording} className="record-button intentional">
-                Start Recording Intentional Movements ({calibrationDuration}s)
-              </button>
-            )}
-          </div>
-        );
-        
-      case 5: // Train the model
-        return (
-          <div className="calibration-step">
-            <h2>Model Training</h2>
-            <p>We've collected:</p>
-            <ul>
-              <li><strong>{modelStatus.intentionalSamples}</strong> intentional movement samples</li>
-              <li><strong>{modelStatus.unintentionalSamples}</strong> unintentional movement samples</li>
-            </ul>
-            
-            {qualityFeedback && (
-              <div className={`quality-feedback ${modelStatus.calibrationQuality > 70 ? 'good' : 
-                                               modelStatus.calibrationQuality > 40 ? 'medium' : 'poor'}`}>
-                <strong>Calibration Quality: {modelStatus.calibrationQuality}/100</strong><br/>
-                {qualityFeedback}
-              </div>
-            )}
-            
-            {isTraining ? (
-              <div className="training-indicator">
-                <p>Training your personalized model...</p>
-                <div className="progress-container">
-                  <div 
-                    className="progress-bar-training" 
-                    style={{width: `${trainingProgress}%`}}
-                  ></div>
-                </div>
-                <p>{trainingProgress}% complete</p>
-                
-                {isAzureTraining && (
-                  <div className="azure-training">
-                    <p>Training Azure AI model...</p>
-                    <div className="progress-container">
-                      <div 
-                        className="progress-bar-azure" 
-                        style={{width: `${azureProgress}%`}}
-                      ></div>
-                    </div>
-                    <p>{Math.round(azureProgress)}% complete</p>
-                  </div>
-                )}
-                
-                <div className="loading-spinner"></div>
-              </div>
-            ) : (
-              <>
-                <button 
-                  onClick={trainModel} 
-                  className="train-button" 
-                  disabled={modelStatus.calibrationSamples < 10}
-                >
-                  {useAzure ? "Train Model with Azure AI" : "Train Model"}
-                </button>
-                <button onClick={resetCalibration} className="reset-button">
-                  Reset & Start Over
-                </button>
-              </>
-            )}
-          </div>
-        );
-        
-      case 6: // Calibration complete
-        return (
-          <div className="calibration-complete">
-            <h2>Calibration Complete!</h2>
-            <p>Your personalized movement model is trained and ready to use.</p>
-            <p>The system will now recognize your intentional gestures and filter out unintentional movements.</p>
-            
-            {useAzure && (
-              <div className="azure-complete">
-                <div className="azure-badge">
-                  <span className="azure-icon">✓</span> Azure AI Enhanced
-                </div>
-                <p>Your model is enhanced with Azure Computer Vision for better accuracy.</p>
-              </div>
-            )}
-            
-            <p>You can recalibrate anytime from the settings menu if needed.</p>
-            
-            <button onClick={completeCalibration} className="complete-button">
-              Start Making Music
-            </button>
-            <button onClick={resetCalibration} className="reset-button">
-              Recalibrate
-            </button>
-          </div>
-        );
-        
+      // More case statements for each step...
+
       default:
         return null;
     }

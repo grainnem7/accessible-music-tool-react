@@ -2,21 +2,18 @@ import React, { useRef, useState, useEffect } from 'react';
 import ReactWebcam from 'react-webcam';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import * as tf from '@tensorflow/tfjs';
+import './WebcamCapture.css';
 
-// TypeScript type assertion to fix type issues
-const Webcam = ReactWebcam as any;
+// Use 'any' to bypass TypeScript errors for now
+const Webcam: any = ReactWebcam;
 
 interface WebcamCaptureProps {
   onPoseDetected: (poses: poseDetection.Pose[]) => void;
   showDebugInfo?: boolean;
   highlightIntentional?: boolean;
   intentionalKeypoints?: string[];
-}
-
-// Extended keypoint for DOM positioning
-interface ExtendedKeypoint extends poseDetection.Keypoint {
-  id: string;
-  isIntentional?: boolean;
+  detector?: any; // Added to support CalibrationComponent
+  onCalibrationComplete?: (userId: string) => void; // Added to support CalibrationComponent
 }
 
 // Skeleton connections mapping for BlazePose
@@ -35,7 +32,17 @@ const POSE_CONNECTIONS = [
   ['left_wrist', 'left_pinky'],
   ['right_wrist', 'right_thumb'],
   ['right_wrist', 'right_index'],
-  ['right_wrist', 'right_pinky']
+  ['right_wrist', 'right_pinky'],
+  // Additional connections from the reference code
+  ['nose', 'left_shoulder'], 
+  ['nose', 'right_shoulder'],
+  ['left_shoulder', 'left_hip'], 
+  ['right_shoulder', 'right_hip'],
+  ['left_hip', 'right_hip'],
+  ['left_hip', 'left_knee'], 
+  ['right_hip', 'right_knee'],
+  ['left_knee', 'left_ankle'], 
+  ['right_knee', 'right_ankle']
 ];
 
 const WebcamCapture: React.FC<WebcamCaptureProps> = ({ 
@@ -45,20 +52,22 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
   intentionalKeypoints = []
 }) => {
   const webcamRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [detector, setDetector] = useState<poseDetection.PoseDetector | null>(null);
   const [isModelLoading, setIsModelLoading] = useState(true);
-  const [modelType, setModelType] = useState<'BlazePose' | 'MoveNet'>('BlazePose');
+  const [modelType, setModelType] = useState<'BlazePose' | 'MoveNet'>('MoveNet'); // Start with MoveNet for faster loading
   const [showLabels, setShowLabels] = useState(true);
-  const [detectedKeypoints, setDetectedKeypoints] = useState<ExtendedKeypoint[]>([]);
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [poseHistory, setPoseHistory] = useState<poseDetection.Pose[]>([]);
   const [velocities, setVelocities] = useState<Record<string, number>>({});
+  const [containerSize, setContainerSize] = useState({ width: 640, height: 480 });
   
   // Initialize TensorFlow.js
   useEffect(() => {
     const setupTensorflow = async () => {
       try {
+        console.log('Initializing TensorFlow.js...');
+        
         // Explicitly initialize TensorFlow
         await tf.ready();
         
@@ -67,13 +76,38 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
           await tf.setBackend('webgl');
         }
         
-        console.log('TensorFlow.js initialized with backend:', tf.getBackend());
+        // Check if backend is actually set
+        const backend = tf.getBackend();
+        if (backend) {
+          console.log('TensorFlow.js initialized with backend:', backend);
+        } else {
+          // Try another backend if webgl fails
+          await tf.setBackend('cpu');
+          console.log('Fallback to CPU backend');
+        }
+        
+        // Configure memory management for WebGL
+        try {
+          // Use publicAPI to set WebGL texture threshold
+          if (backend === 'webgl') {
+            tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
+          }
+        } catch (e) {
+          console.warn('Could not configure WebGL texture management', e);
+        }
       } catch (error) {
         console.error('TensorFlow initialization error:', error);
+        alert('Error initializing TensorFlow.js. Please try reloading the page.');
       }
     };
     
     setupTensorflow();
+    
+    // Cleanup
+    return () => {
+      // Dispose any lingering tensors
+      tf.disposeVariables();
+    };
   }, []);
 
   // Track container size
@@ -115,20 +149,20 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
         let newDetector;
         
         if (modelType === 'BlazePose') {
-          // Create BlazePose detector (better for hands and upper body detail)
+          // Create BlazePose detector
           const model = poseDetection.SupportedModels.BlazePose;
           const detectorConfig = {
             runtime: 'tfjs',
             enableSmoothing: true,
-            modelType: 'full' // 'lite', 'full', or 'heavy'
+            modelType: 'lite' // Use 'lite' for faster loading
           };
           newDetector = await poseDetection.createDetector(model, detectorConfig);
           console.log('BlazePose detector created');
         } else {
-          // Create MoveNet detector
+          // Create MoveNet detector (faster and more reliable for our use case)
           const model = poseDetection.SupportedModels.MoveNet;
           const detectorConfig = {
-            modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER,
+            modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
             enableSmoothing: true,
             minPoseScore: 0.25
           };
@@ -178,6 +212,19 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
           });
           
           if (poses && poses.length > 0) {
+            // Ensure canvas dimensions match the video
+            if (canvasRef.current) {
+              const videoWidth = video.videoWidth;
+              const videoHeight = video.videoHeight;
+              
+              // Set canvas size directly
+              canvasRef.current.width = videoWidth;
+              canvasRef.current.height = videoHeight;
+              
+              // Draw poses on canvas
+              drawPoses(poses, videoWidth, videoHeight, intentionalKeypoints);
+            }
+            
             // Keep a history of poses for velocity calculation
             setPoseHistory(prev => {
               const newHistory = [...prev, poses[0]];
@@ -209,15 +256,6 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
               setVelocities(newVelocities);
             }
             
-            // Mark intentional keypoints if provided
-            const markedKeypoints = poses[0].keypoints.map(kp => ({
-              ...kp,
-              id: `keypoint-${kp.name}-${Date.now()}`,
-              isIntentional: intentionalKeypoints.includes(kp.name || '')
-            })).filter(kp => kp.score && kp.score > 0.2);
-            
-            setDetectedKeypoints(markedKeypoints);
-            
             // Send poses to parent component
             onPoseDetected(poses);
           }
@@ -238,142 +276,131 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [detector, isModelLoading, onPoseDetected, intentionalKeypoints]);
+  }, [detector, isModelLoading, onPoseDetected, intentionalKeypoints, poseHistory]);
 
-  // Find a keypoint by name
-  const findKeypointByName = (name: string): ExtendedKeypoint | undefined => {
-    return detectedKeypoints.find(kp => kp.name === name);
-  };
-
-  // Render skeleton lines connecting keypoints
-  const renderSkeletonLines = () => {
-    if (detectedKeypoints.length === 0) return null;
+  // Draw the detected poses on the canvas
+  const drawPoses = (
+    poses: poseDetection.Pose[], 
+    width: number, 
+    height: number,
+    intentionalKeypoints: string[] = []
+  ) => {
+    const ctx = canvasRef.current?.getContext('2d');
+    if (!ctx) return;
     
-    // Get video dimensions to calculate correct positions
-    const videoWidth = webcamRef.current?.video?.videoWidth || 800;
-    const videoHeight = webcamRef.current?.video?.videoHeight || 600;
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
     
-    // Calculate scale factors for positioning
-    const scaleX = containerSize.width / videoWidth;
-    const scaleY = containerSize.height / videoHeight;
-    
-    return (
-      <svg 
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          pointerEvents: 'none'
-        }}
-      >
-        {POSE_CONNECTIONS.map(([from, to], index) => {
-          const fromKeypoint = findKeypointByName(from);
-          const toKeypoint = findKeypointByName(to);
-          
-          if (!fromKeypoint || !toKeypoint) return null;
+    // Draw each pose
+    poses.forEach((pose) => {
+      // Create map of keypoints by name for easy lookup
+      const keypointMap = new Map();
+      pose.keypoints.forEach(keypoint => {
+        if (keypoint.name) {
+          keypointMap.set(keypoint.name, {
+            ...keypoint,
+            isIntentional: intentionalKeypoints.includes(keypoint.name)
+          });
+        }
+      });
+      
+      // Draw skeleton (connecting lines between keypoints)
+      ctx.lineWidth = 2;
+      
+      POSE_CONNECTIONS.forEach(([start, end]) => {
+        const startPoint = keypointMap.get(start);
+        const endPoint = keypointMap.get(end);
+        
+        if (startPoint && endPoint && 
+            startPoint.score && endPoint.score &&
+            startPoint.score > 0.3 && endPoint.score > 0.3) {
           
           // Determine if both points are intentional (for highlighting)
           const isConnectionIntentional = highlightIntentional && 
-                                        fromKeypoint.isIntentional && 
-                                        toKeypoint.isIntentional;
+                                         startPoint.isIntentional && 
+                                         endPoint.isIntentional;
           
-          return (
-            <line
-              key={`line-${from}-${to}-${index}`}
-              x1={fromKeypoint.x ? fromKeypoint.x * scaleX : 0}
-              y1={fromKeypoint.y ? fromKeypoint.y * scaleY : 0}
-              x2={toKeypoint.x ? toKeypoint.x * scaleX : 0}
-              y2={toKeypoint.y ? toKeypoint.y * scaleY : 0}
-              stroke={isConnectionIntentional ? "rgba(255, 215, 0, 0.8)" : "rgba(0, 255, 0, 0.7)"}
-              strokeWidth={isConnectionIntentional ? "4" : "2"}
-            />
-          );
-        })}
-      </svg>
-    );
+          ctx.beginPath();
+          ctx.moveTo(startPoint.x, startPoint.y);
+          ctx.lineTo(endPoint.x, endPoint.y);
+          
+          if (isConnectionIntentional) {
+            ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)'; // Gold for intentional
+            ctx.lineWidth = 4;
+          } else {
+            ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)'; // Green for normal
+            ctx.lineWidth = 2;
+          }
+          
+          ctx.stroke();
+        }
+      });
+      
+      // Draw keypoints
+      pose.keypoints.forEach((keypoint) => {
+        if (keypoint.score && keypoint.score > 0.3) { // Only draw high-confidence keypoints
+          const isIntentional = intentionalKeypoints.includes(keypoint.name || '');
+          
+          // Draw keypoint circle
+          ctx.beginPath();
+          ctx.arc(keypoint.x, keypoint.y, isIntentional ? 7 : 5, 0, 2 * Math.PI);
+          
+          if (isIntentional) {
+            ctx.fillStyle = '#FFD700'; // Gold for intentional
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          } else {
+            if (keypoint.score > 0.7) {
+              ctx.fillStyle = '#00FF00'; // Green for high confidence
+            } else if (keypoint.score > 0.5) {
+              ctx.fillStyle = '#FFFF00'; // Yellow for medium confidence
+            } else {
+              ctx.fillStyle = '#FF0000'; // Red for low confidence
+            }
+          }
+          
+          ctx.fill();
+          
+          // Only add text labels if enabled
+          if (showLabels && keypoint.name) {
+            // Background for text (for better visibility)
+            const labelText = `${keypoint.name}: ${Math.round(keypoint.score * 100)}%${isIntentional ? ' (I)' : ''}`;
+            const textWidth = ctx.measureText(labelText).width;
+            
+            ctx.fillStyle = isIntentional ? 'rgba(255, 215, 0, 0.7)' : 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(
+              keypoint.x + 10, 
+              keypoint.y - 10, 
+              textWidth + 6, 
+              20
+            );
+            
+            // Draw text
+            ctx.font = '12px Arial';
+            ctx.fillStyle = isIntentional ? 'black' : 'white';
+            ctx.fillText(labelText, keypoint.x + 13, keypoint.y + 5);
+          }
+        }
+      });
+    });
   };
 
-  // Add this method to WebcamCapture component
-const switchModelType = () => {
-  setModelType(prevType => prevType === 'BlazePose' ? 'MoveNet' : 'BlazePose');
-};
+  // Switch between pose detection models
+  const switchModelType = () => {
+    setModelType(prevType => prevType === 'BlazePose' ? 'MoveNet' : 'BlazePose');
+  };
 
-// Add this method to WebcamCapture component
-const toggleLabels = () => {
-  setShowLabels(prevShowLabels => !prevShowLabels);
-};
-
-  // Render keypoint labels
-  const renderKeypointLabels = () => {
-    if (!showLabels || detectedKeypoints.length === 0) return null;
-    
-    const getColor = (keypoint: ExtendedKeypoint) => {
-      if (keypoint.isIntentional) return '#FFD700'; // Gold for intentional
-      if (!keypoint.score) return '#FF0000';
-      if (keypoint.score >= 0.7) return '#00FF00';
-      if (keypoint.score >= 0.5) return '#FFFF00';
-      return '#FF0000';
-    };
-    
-    // Calculate scale factors for positioning
-    const videoWidth = webcamRef.current?.video?.videoWidth || 800;
-    const videoHeight = webcamRef.current?.video?.videoHeight || 600;
-    const scaleX = containerSize.width / videoWidth;
-    const scaleY = containerSize.height / videoHeight;
-    
-    return detectedKeypoints.map(keypoint => (
-      <div 
-        key={keypoint.id}
-        style={{
-          position: 'absolute',
-          left: `${keypoint.x ? keypoint.x * scaleX : 0}px`,
-          top: `${keypoint.y ? keypoint.y * scaleY : 0}px`,
-          zIndex: 100,
-          pointerEvents: 'none'
-        }}
-      >
-        {/* Point marker */}
-        <div style={{
-          width: keypoint.isIntentional ? '20px' : '16px',
-          height: keypoint.isIntentional ? '20px' : '16px',
-          backgroundColor: getColor(keypoint),
-          borderRadius: '50%',
-          position: 'absolute',
-          top: keypoint.isIntentional ? '-10px' : '-8px',
-          left: keypoint.isIntentional ? '-10px' : '-8px',
-          border: `2px solid ${keypoint.isIntentional ? 'white' : 'rgba(255,255,255,0.7)'}`,
-          boxShadow: keypoint.isIntentional ? '0 0 10px gold' : 'none'
-        }} />
-        
-        {/* Label */}
-        {showLabels && (
-          <div style={{
-            position: 'absolute',
-            left: '10px',
-            top: '-10px',
-            backgroundColor: keypoint.isIntentional ? 'rgba(255, 215, 0, 0.8)' : 'rgba(0, 0, 0, 0.7)',
-            color: keypoint.isIntentional ? 'black' : 'white',
-            padding: '2px 6px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            whiteSpace: 'nowrap',
-            textShadow: keypoint.isIntentional ? 'none' : '1px 1px 1px black',
-            border: `1px solid ${getColor(keypoint)}`
-          }}>
-            {keypoint.name}: {Math.round((keypoint.score || 0) * 100)}%
-            {keypoint.isIntentional && ' (Intentional)'}
-          </div>
-        )}
-      </div>
-    ));
+  // Toggle label visibility
+  const toggleLabels = () => {
+    setShowLabels(prevShowLabels => !prevShowLabels);
   };
 
   // Render debug info panel
   const renderDebugPanel = () => {
-    if (!showDebugInfo || detectedKeypoints.length === 0) return null;
+    if (!showDebugInfo || poseHistory.length === 0) return null;
+    
+    const latestPose = poseHistory[poseHistory.length - 1];
     
     return (
       <div style={{
@@ -387,21 +414,26 @@ const toggleLabels = () => {
         maxHeight: 300,
         overflow: 'auto',
         fontSize: 12,
-        zIndex: 100
+        zIndex: 30
       }}>
         <h3 style={{ margin: '0 0 8px 0' }}>Keypoints & Velocities</h3>
-        {detectedKeypoints.map((kp, i) => (
-          <div key={i} style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between',
-            marginBottom: '4px',
-            borderBottom: '1px solid rgba(255,255,255,0.2)',
-            backgroundColor: kp.isIntentional ? 'rgba(255, 215, 0, 0.3)' : 'transparent'
-          }}>
-            <span>{kp.name}: {Math.round((kp.score || 0) * 100)}%</span>
-            <span>Vel: {velocities[kp.name || '']?.toFixed(1) || 'N/A'}</span>
-          </div>
-        ))}
+        {latestPose.keypoints
+          .filter(kp => kp.score && kp.score > 0.5 && kp.name)
+          .map((kp, i) => {
+            const isIntentional = intentionalKeypoints.includes(kp.name || '');
+            return (
+              <div key={i} style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between',
+                marginBottom: '4px',
+                borderBottom: '1px solid rgba(255,255,255,0.2)',
+                backgroundColor: isIntentional ? 'rgba(255, 215, 0, 0.3)' : 'transparent'
+              }}>
+                <span>{kp.name}: {Math.round((kp.score || 0) * 100)}%</span>
+                <span>Vel: {velocities[kp.name || '']?.toFixed(1) || 'N/A'}</span>
+              </div>
+            );
+          })}
       </div>
     );
   };
@@ -409,15 +441,19 @@ const toggleLabels = () => {
   return (
     <div 
       ref={containerRef}
+      className="webcam-container"
       style={{ 
         position: 'relative',
-        width: '800px',
-        maxWidth: '100%',
-        margin: '0 auto'
+        width: '100%',
+        maxWidth: '640px',
+        margin: '0 auto',
+        overflow: 'hidden',
+        borderRadius: '10px',
+        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)'
       }}
     >
       {isModelLoading && (
-        <div style={{ 
+        <div className="loading-indicator" style={{ 
           position: 'absolute',
           top: '50%',
           left: '50%',
@@ -426,37 +462,42 @@ const toggleLabels = () => {
           color: 'white',
           padding: '10px 20px',
           borderRadius: '5px',
-          zIndex: 10
+          zIndex: 50
         }}>
           Loading pose detection model...
         </div>
       )}
       
-      <div style={{ position: 'relative', width: '100%' }}>
-        <Webcam
-          ref={webcamRef}
-          audio={false}
-          screenshotFormat="image/jpeg"
-          width={800}
-          height={600}
-          videoConstraints={{
-            width: 800,
-            height: 600,
-            facingMode: "user"
-          }}
-          style={{
-            width: '100%',
-            height: 'auto',
-            filter: isModelLoading ? 'blur(4px)' : 'none'
-          }}
-        />
-        
-        {/* Skeleton lines */}
-        {renderSkeletonLines()}
-        
-        {/* Keypoint labels */}
-        {renderKeypointLabels()}
-      </div>
+      <Webcam
+        ref={webcamRef}
+        audio={false}
+        screenshotFormat="image/jpeg"
+        width={640}
+        height={480}
+        videoConstraints={{
+          width: 640,
+          height: 480,
+          facingMode: "user"
+        }}
+        className="webcam-video"
+        style={{
+          width: '100%',
+          height: 'auto',
+          filter: isModelLoading ? 'blur(4px)' : 'none'
+        }}
+      />
+      
+      <canvas
+        ref={canvasRef}
+        className="webcam-canvas"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%'
+        }}
+      />
       
       {/* Debug panel */}
       {renderDebugPanel()}
@@ -467,10 +508,12 @@ const toggleLabels = () => {
         bottom: '10px',
         right: '10px',
         display: 'flex',
-        gap: '10px'
+        gap: '10px',
+        zIndex: 40
       }}>
         <button 
           onClick={switchModelType}
+          className="model-switch-button"
           style={{
             backgroundColor: 'rgba(0,0,0,0.7)',
             color: 'white',
@@ -478,8 +521,7 @@ const toggleLabels = () => {
             padding: '8px 12px',
             borderRadius: '5px',
             cursor: 'pointer',
-            fontSize: '14px',
-            zIndex: 10
+            fontSize: '14px'
           }}
         >
           Switch to {modelType === 'BlazePose' ? 'MoveNet' : 'BlazePose'} Model
@@ -487,6 +529,7 @@ const toggleLabels = () => {
         
         <button 
           onClick={toggleLabels}
+          className="labels-button"
           style={{
             backgroundColor: 'rgba(0,0,0,0.7)',
             color: 'white',
@@ -494,8 +537,7 @@ const toggleLabels = () => {
             padding: '8px 12px',
             borderRadius: '5px',
             cursor: 'pointer',
-            fontSize: '14px',
-            zIndex: 10
+            fontSize: '14px'
           }}
         >
           {showLabels ? 'Hide' : 'Show'} Labels
