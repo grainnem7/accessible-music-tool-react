@@ -5,6 +5,8 @@ import CalibrationComponent from './components/CalibrationComponent';
 import { SoundEngine, SoundPreset } from './utils/SoundEngine';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import CalibrationComponentProps from './components/CalibrationComponentProps';
+// Import will be used once the component is created
+// import GraphicScoreComponent from './components/GraphicScoreComponent';
 import './App.css';
 
 // Define application states
@@ -12,10 +14,14 @@ enum AppState {
   Welcome = 'welcome',
   Calibration = 'calibration',
   Performance = 'performance',
-  Settings = 'settings'
+  Settings = 'settings',
+  GraphicScore = 'graphicScore'
 }
 
 const App: React.FC = () => {
+  // For debugging - remove after confirming changes are applied
+  console.log('App.tsx loaded - Version with Graphic Score feature');
+  
   // State
   const [appState, setAppState] = useState<AppState>(AppState.Welcome);
   const [detector] = useState<MLIntentionDetector>(new MLIntentionDetector());
@@ -26,6 +32,8 @@ const App: React.FC = () => {
   const [detectedMovements, setDetectedMovements] = useState<MovementInfo[]>([]);
   const [isSoundInitialized, setIsSoundInitialized] = useState<boolean>(false);
   const [showDebugInfo, setShowDebugInfo] = useState<boolean>(false);
+  const [isRecordingMovements, setIsRecordingMovements] = useState<boolean>(false);
+  const [recordedMovements, setRecordedMovements] = useState<MovementInfo[]>([]);
 
   // Load presets from the sound engine
   useEffect(() => {
@@ -52,6 +60,11 @@ const App: React.FC = () => {
       const movements = detector.processPoses(poses);
       setDetectedMovements(movements);
       
+      // Record movements if enabled
+      if (isRecordingMovements) {
+        setRecordedMovements(prev => [...prev, ...movements]);
+      }
+      
       // Feed intentional movements to the sound engine
       movements.forEach(movement => {
         if (movement.isIntentional) {
@@ -64,7 +77,24 @@ const App: React.FC = () => {
         }
       });
     }
-  }, [appState, detector, soundEngine]);
+  }, [appState, detector, soundEngine, isRecordingMovements]);
+
+  // Toggle recording state
+  const toggleRecording = useCallback(() => {
+    console.log("Toggling recording state");
+    setIsRecordingMovements(prev => !prev);
+    
+    // If stopping recording, you might want to save or process the data
+    if (isRecordingMovements) {
+      console.log(`Recorded ${recordedMovements.length} movements`);
+    }
+  }, [isRecordingMovements, recordedMovements.length]);
+
+  // Clear recorded movements
+  const clearRecordedMovements = useCallback(() => {
+    console.log("Clearing recorded movements");
+    setRecordedMovements([]);
+  }, []);
 
   // Change the selected sound preset
   const handlePresetChange = (presetName: string) => {
@@ -147,20 +177,25 @@ const App: React.FC = () => {
           </div>
         );
         
-        case AppState.Calibration:
-          return (
-            <div className="calibration-screen">
-              <h1>Movement Calibration</h1>
-              {/* Use type assertion to bypass TypeScript error */}
-              <CalibrationComponent 
-                {...{detector, onCalibrationComplete: handleCalibrationComplete} as any} 
-              />
-            </div>
-          );
+      case AppState.Calibration:
+        return (
+          <div className="calibration-screen">
+            <h1>Movement Calibration</h1>
+            {/* Use type assertion to bypass TypeScript error */}
+            <CalibrationComponent 
+              {...{detector, onCalibrationComplete: handleCalibrationComplete} as any} 
+            />
+          </div>
+        );
         
       case AppState.Performance:
         return (
           <div className="performance-screen">
+            {/* Debug marker - remove after confirming changes */}
+            <div style={{padding: '5px', margin: '5px', background: '#f0f0f0', display: 'none'}}>
+              Performance Screen with Graphic Score feature
+            </div>
+            
             <div className="webcam-container">
               <WebcamCapture onPoseDetected={handlePoseDetected} />
             </div>
@@ -190,9 +225,33 @@ const App: React.FC = () => {
                 <button onClick={() => setAppState(AppState.Settings)}>
                   Settings
                 </button>
+                <button 
+                  onClick={() => {
+                    console.log('Graphic Score button clicked');
+                    setAppState(AppState.GraphicScore);
+                  }}
+                  style={{backgroundColor: '#3498db'}}
+                >
+                  Graphic Score
+                </button>
                 <button onClick={() => setShowDebugInfo(!showDebugInfo)}>
                   {showDebugInfo ? 'Hide' : 'Show'} Debug Info
                 </button>
+              </div>
+              
+              <div className="recording-controls">
+                <button 
+                  className={`record-button ${isRecordingMovements ? 'recording' : ''}`}
+                  onClick={toggleRecording}
+                >
+                  {isRecordingMovements ? 'Stop Recording' : 'Start Recording'}
+                </button>
+                {isRecordingMovements && (
+                  <div className="recording-indicator">
+                    <div className="recording-dot"></div>
+                    <span>Recording movements ({recordedMovements.length})</span>
+                  </div>
+                )}
               </div>
               
               {showDebugInfo && (
@@ -240,6 +299,7 @@ const App: React.FC = () => {
                   defaultValue="0.3"
                   onChange={(e) => {
                     // Add function to adjust reverb
+                    soundEngine.setReverbAmount(parseFloat(e.target.value));
                   }}
                 />
               </div>
@@ -254,6 +314,8 @@ const App: React.FC = () => {
                   defaultValue="5"
                   onChange={(e) => {
                     // Add function to adjust sensitivity
+                    const sensitivity = parseFloat(e.target.value);
+                    console.log(`Setting sensitivity to ${sensitivity}/10`);
                   }}
                 />
               </div>
@@ -265,6 +327,69 @@ const App: React.FC = () => {
             >
               Back to Performance
             </button>
+          </div>
+        );
+
+      case AppState.GraphicScore:
+        console.log('Rendering Graphic Score view');
+        // Use a simple placeholder until GraphicScoreComponent is created
+        return (
+          <div className="graphic-score-screen">
+            <h1>Movement Graphic Score</h1>
+            
+            <div style={{
+              padding: '20px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '10px',
+              marginBottom: '20px'
+            }}>
+              <h3>Temporary Graphic Score Placeholder</h3>
+              <p>This is a placeholder for the GraphicScoreComponent.</p>
+              <p>Once you create the component files, replace this with the actual component.</p>
+              
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                margin: '20px 0'
+              }}>
+                <div>
+                  <button 
+                    style={{
+                      backgroundColor: isRecordingMovements ? '#e74c3c' : '#3498db',
+                      color: 'white',
+                      border: 'none',
+                      padding: '10px 20px',
+                      borderRadius: '5px',
+                      cursor: 'pointer'
+                    }}
+                    onClick={toggleRecording}
+                  >
+                    {isRecordingMovements ? 'Stop Recording' : 'Start Recording'}
+                  </button>
+                </div>
+                
+                <div>
+                  <p>Recorded movements: {recordedMovements.length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="action-buttons">
+              <button 
+                onClick={clearRecordedMovements}
+                disabled={recordedMovements.length === 0 || isRecordingMovements}
+              >
+                Clear Recording
+              </button>
+              
+              <button 
+                className="back-button"
+                onClick={() => setAppState(AppState.Performance)}
+              >
+                Back to Performance
+              </button>
+            </div>
           </div>
         );
     }
