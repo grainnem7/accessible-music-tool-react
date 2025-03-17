@@ -1,7 +1,28 @@
 // src/services/azureCustomVisionService.ts
 
 import { azureConfig } from '../config';
-import { MovementFeatures } from '../utils/MLIntentionDetector';
+
+// Import directly from your project - this assumes the interface exists
+// If it doesn't, uncomment the interface definition below
+/* 
+interface MovementFeatures {
+  keypoint: string;
+  velocityX: number;
+  velocityY: number;
+  acceleration: number;
+  jitter: number;
+  isSmooth: boolean;
+  direction: string;
+  timestamp: number;
+  magnitudeOfMovement: number;
+  durationOfMovement: number;
+  isReversing: boolean;
+  frequencyOfMovement: number;
+  steadiness: number;
+  patternScore: number;
+  continuity: number;
+}
+*/
 
 export interface IntentionalityPrediction {
   isIntentional: boolean;
@@ -21,7 +42,7 @@ export class AzureCustomVisionService {
     this.publishedModelName = azureConfig.customVisionModelName;
   }
 
-  async predictIntentionality(features: MovementFeatures): Promise<IntentionalityPrediction> {
+  async predictIntentionality(features: any): Promise<IntentionalityPrediction> {
     try {
       const payload = {
         // Flatten movement features for Azure Custom Vision
@@ -81,7 +102,7 @@ export class AzureCustomVisionService {
 
   // Method to upload training data to Azure Custom Vision
   async uploadTrainingData(
-    calibrationSamples: { features: MovementFeatures, isIntentional: boolean }[]
+    calibrationSamples: { features: any, isIntentional: boolean }[]
   ): Promise<boolean> {
     try {
       const createImageRequests = calibrationSamples.map(sample => {

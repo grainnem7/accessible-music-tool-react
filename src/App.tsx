@@ -4,7 +4,7 @@ import { MLIntentionDetector, MovementInfo } from './utils/MLIntentionDetector';
 import CalibrationComponent from './components/CalibrationComponent';
 import { SoundEngine, SoundPreset } from './utils/SoundEngine';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import CalibrationComponentProps from './components/CalibrationComponentProps';
+import AzureIntegrationSettings from './components/AzureIntegrationSettings';
 import './App.css';
 
 // Define application states
@@ -26,6 +26,9 @@ const App: React.FC = () => {
   const [detectedMovements, setDetectedMovements] = useState<MovementInfo[]>([]);
   const [isSoundInitialized, setIsSoundInitialized] = useState<boolean>(false);
   const [showDebugInfo, setShowDebugInfo] = useState<boolean>(false);
+  const [volume, setVolume] = useState<number>(0.7);
+  const [reverbAmount, setReverbAmount] = useState<number>(0.3);
+  const [sensitivity, setSensitivity] = useState<number>(5);
 
   // Load presets from the sound engine
   useEffect(() => {
@@ -38,31 +41,38 @@ const App: React.FC = () => {
     try {
       await soundEngine.initialize();
       soundEngine.loadPreset(selectedPreset);
+      soundEngine.setVolume(volume);
+      soundEngine.setReverbAmount(reverbAmount);
       setIsSoundInitialized(true);
     } catch (err) {
       console.error('Failed to initialize audio:', err);
       alert('Unable to initialize audio. Please check your browser settings.');
     }
-  }, [soundEngine, selectedPreset]);
+  }, [soundEngine, selectedPreset, volume, reverbAmount]);
 
   // Handle pose detection results
   const handlePoseDetected = useCallback((poses: poseDetection.Pose[]) => {
     if (appState === AppState.Performance && poses.length > 0) {
       // Process the pose with the ML detector
-      const movements = detector.processPoses(poses);
-      setDetectedMovements(movements);
-      
-      // Feed intentional movements to the sound engine
-      movements.forEach(movement => {
-        if (movement.isIntentional) {
-          soundEngine.processMovement(
-            movement.keypoint,
-            movement.isIntentional,
-            movement.direction,
-            movement.velocity
-          );
-        }
-      });
+      detector.processPoses(poses)
+        .then(movements => {
+          setDetectedMovements(movements);
+          
+          // Feed intentional movements to the sound engine
+          movements.forEach(movement => {
+            if (movement.isIntentional) {
+              soundEngine.processMovement(
+                movement.keypoint,
+                movement.isIntentional,
+                movement.direction,
+                movement.velocity
+              );
+            }
+          });
+        })
+        .catch(err => {
+          console.error("Error processing poses:", err);
+        });
     }
   }, [appState, detector, soundEngine]);
 
@@ -76,6 +86,25 @@ const App: React.FC = () => {
   const handleCalibrationComplete = (calibratedUserId: string) => {
     setUserId(calibratedUserId);
     setAppState(AppState.Performance);
+  };
+
+  // Handle settings changes
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseFloat(e.target.value);
+    setVolume(newVolume);
+    soundEngine.setVolume(newVolume);
+  };
+
+  const handleReverbChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newReverb = parseFloat(e.target.value);
+    setReverbAmount(newReverb);
+    soundEngine.setReverbAmount(newReverb);
+  };
+
+  const handleSensitivityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newSensitivity = parseInt(e.target.value, 10);
+    setSensitivity(newSensitivity);
+    // You can implement sensitivity settings in the MLIntentionDetector
   };
 
   // Try to load saved model for a user
@@ -147,22 +176,29 @@ const App: React.FC = () => {
           </div>
         );
         
-        case AppState.Calibration:
-          return (
-            <div className="calibration-screen">
-              <h1>Movement Calibration</h1>
-              {/* Use type assertion to bypass TypeScript error */}
-              <CalibrationComponent 
-                {...{detector, onCalibrationComplete: handleCalibrationComplete} as any} 
-              />
-            </div>
-          );
+      case AppState.Calibration:
+        return (
+          <div className="calibration-screen">
+            <h1>Movement Calibration</h1>
+            <CalibrationComponent 
+              detector={detector as any} 
+              onCalibrationComplete={handleCalibrationComplete} 
+            />
+          </div>
+        );
         
       case AppState.Performance:
         return (
           <div className="performance-screen">
             <div className="webcam-container">
-              <WebcamCapture onPoseDetected={handlePoseDetected} />
+              <WebcamCapture 
+                onPoseDetected={handlePoseDetected}
+                showDebugInfo={showDebugInfo}
+                highlightIntentional={true}
+                intentionalKeypoints={detectedMovements
+                  .filter(m => m.isIntentional)
+                  .map(m => m.keypoint)}
+              />
             </div>
             
             <div className="controls-panel">
@@ -231,17 +267,29 @@ const App: React.FC = () => {
               <p>Adjust your sound preferences:</p>
               
               <div className="form-group">
+                <label>Volume:</label>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="1" 
+                  step="0.1" 
+                  value={volume}
+                  onChange={handleVolumeChange}
+                />
+                <span>{Math.round(volume * 100)}%</span>
+              </div>
+              
+              <div className="form-group">
                 <label>Reverb Amount:</label>
                 <input 
                   type="range" 
                   min="0" 
                   max="1" 
                   step="0.1" 
-                  defaultValue="0.3"
-                  onChange={(e) => {
-                    // Add function to adjust reverb
-                  }}
+                  value={reverbAmount}
+                  onChange={handleReverbChange}
                 />
+                <span>{Math.round(reverbAmount * 100)}%</span>
               </div>
               
               <div className="form-group">
@@ -251,12 +299,20 @@ const App: React.FC = () => {
                   min="1" 
                   max="10" 
                   step="1" 
-                  defaultValue="5"
-                  onChange={(e) => {
-                    // Add function to adjust sensitivity
-                  }}
+                  value={sensitivity}
+                  onChange={handleSensitivityChange}
                 />
+                <span>{sensitivity}/10</span>
               </div>
+            </div>
+            
+            {/* Azure Settings */}
+            <div className="settings-section">
+              <h2>Azure AI Integration</h2>
+              <AzureIntegrationSettings 
+                detector={detector} 
+                userId={userId}
+              />
             </div>
             
             <button 

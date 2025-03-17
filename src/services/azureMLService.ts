@@ -1,7 +1,6 @@
 // src/services/azureMLService.ts
 
 import { azureConfig } from '../config';
-import { MovementFeatures } from '../utils/MLIntentionDetector';
 
 export interface MLPrediction {
   isIntentional: boolean;
@@ -17,7 +16,7 @@ export class AzureMLService {
     this.apiKey = azureConfig.mlApiKey;
   }
 
-  async predictIntentionality(features: MovementFeatures): Promise<MLPrediction> {
+  async predictIntentionality(features: any): Promise<MLPrediction> {
     try {
       // Prepare the data in the format expected by your Azure ML model
       const payload = {
@@ -76,7 +75,7 @@ export class AzureMLService {
   // Method to train or retrain an Azure ML model with new data
   async trainModel(
     userId: string, 
-    calibrationSamples: { features: MovementFeatures, isIntentional: boolean }[]
+    calibrationSamples: { features: any, isIntentional: boolean }[]
   ): Promise<boolean> {
     try {
       // Prepare the training data

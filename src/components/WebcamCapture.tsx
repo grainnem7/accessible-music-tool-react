@@ -3,17 +3,16 @@ import ReactWebcam from 'react-webcam';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import * as tf from '@tensorflow/tfjs';
 import './WebcamCapture.css';
+import { AzureVisionService } from '../services/AzureVisionService';
 
-// Use 'any' to bypass TypeScript errors for now
-const Webcam: any = ReactWebcam;
+// TypeScript casting to fix type issues
+const Webcam = ReactWebcam as any;
 
 interface WebcamCaptureProps {
   onPoseDetected: (poses: poseDetection.Pose[]) => void;
   showDebugInfo?: boolean;
   highlightIntentional?: boolean;
   intentionalKeypoints?: string[];
-  detector?: any; // Added to support CalibrationComponent
-  onCalibrationComplete?: (userId: string) => void; // Added to support CalibrationComponent
 }
 
 // Skeleton connections mapping for BlazePose
@@ -61,6 +60,8 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
   const [poseHistory, setPoseHistory] = useState<poseDetection.Pose[]>([]);
   const [velocities, setVelocities] = useState<Record<string, number>>({});
   const [containerSize, setContainerSize] = useState({ width: 640, height: 480 });
+  const [useAzureVision, setUseAzureVision] = useState<boolean>(false);
+  const [azureVisionService] = useState(new AzureVisionService());
   
   // Initialize TensorFlow.js
   useEffect(() => {
@@ -192,7 +193,8 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
 
   // Run pose detection
   useEffect(() => {
-    if (!detector || isModelLoading) return;
+    if (isModelLoading) return;
+    if (!detector && !useAzureVision) return;
     
     let animationFrameId: number;
     
@@ -204,12 +206,42 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
       ) {
         try {
           const video = webcamRef.current.video;
+          let poses: poseDetection.Pose[] = [];
           
-          // Detect poses
-          const poses = await detector.estimatePoses(video, {
-            flipHorizontal: false,
-            maxPoses: 1
-          });
+          if (useAzureVision) {
+            // Use Azure Computer Vision
+            try {
+              const videoBlob = await azureVisionService.captureVideoFrame(video);
+              const azurePoseResult = await azureVisionService.detectPose(videoBlob);
+              
+              if (azurePoseResult && azurePoseResult.keypoints.length > 0) {
+                // Convert Azure keypoints to TensorFlow.js format
+                poses = [{
+                  keypoints: azurePoseResult.keypoints.map(kp => ({
+                    name: kp.name,
+                    x: kp.position.x,
+                    y: kp.position.y,
+                    score: kp.confidence
+                  })),
+                  score: 1.0  // Overall pose confidence
+                }];
+              }
+            } catch (azureError) {
+              console.error('Azure Vision error, falling back to TensorFlow:', azureError);
+              if (detector) {
+                poses = await detector.estimatePoses(video, {
+                  flipHorizontal: false,
+                  maxPoses: 1
+                });
+              }
+            }
+          } else if (detector) {
+            // Use TensorFlow.js
+            poses = await detector.estimatePoses(video, {
+              flipHorizontal: false,
+              maxPoses: 1
+            });
+          }
           
           if (poses && poses.length > 0) {
             // Ensure canvas dimensions match the video
@@ -276,7 +308,7 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
         cancelAnimationFrame(animationFrameId);
       }
     };
-  }, [detector, isModelLoading, onPoseDetected, intentionalKeypoints, poseHistory]);
+  }, [detector, isModelLoading, onPoseDetected, intentionalKeypoints, poseHistory, useAzureVision, azureVisionService]);
 
   // Draw the detected poses on the canvas
   const drawPoses = (
@@ -395,6 +427,11 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
   const toggleLabels = () => {
     setShowLabels(prevShowLabels => !prevShowLabels);
   };
+  
+  // Toggle Azure Vision
+  const toggleAzureVision = () => {
+    setUseAzureVision(prev => !prev);
+  };
 
   // Render debug info panel
   const renderDebugPanel = () => {
@@ -511,6 +548,22 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
         gap: '10px',
         zIndex: 40
       }}>
+        <button 
+          onClick={toggleAzureVision}
+          className="azure-vision-button"
+          style={{
+            backgroundColor: useAzureVision ? 'rgba(0,120,212,0.8)' : 'rgba(0,0,0,0.7)',
+            color: 'white',
+            border: 'none',
+            padding: '8px 12px',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontSize: '14px'
+          }}
+        >
+          {useAzureVision ? 'Use TensorFlow.js' : 'Use Azure Vision'}
+        </button>
+        
         <button 
           onClick={switchModelType}
           className="model-switch-button"

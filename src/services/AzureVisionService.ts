@@ -1,4 +1,4 @@
-// src/services/azureVisionService.ts
+// src/services/AzureVisionService.ts
 
 import { azureConfig } from '../config';
 
@@ -11,6 +11,21 @@ export interface AzurePoseKeypoint {
 export interface AzurePoseDetectionResult {
   keypoints: AzurePoseKeypoint[];
   timestamp: number;
+}
+
+interface Joint {
+  position: { x: number; y: number };
+  confidence: number;
+}
+
+interface BodyData {
+  joints: Record<string, Joint>;
+}
+
+interface BodyTrackingResponse {
+  bodyTracking?: {
+    bodies?: BodyData[];
+  };
 }
 
 export class AzureVisionService {
@@ -42,7 +57,7 @@ export class AzureVisionService {
         throw new Error(`Azure Vision API error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as BodyTrackingResponse;
       
       // Transform Azure's format to our application format
       return this.transformBodyTrackingResults(data);
@@ -52,7 +67,7 @@ export class AzureVisionService {
     }
   }
 
-  private transformBodyTrackingResults(data: any): AzurePoseDetectionResult {
+  private transformBodyTrackingResults(data: BodyTrackingResponse): AzurePoseDetectionResult {
     const keypoints: AzurePoseKeypoint[] = [];
     
     if (data.bodyTracking && data.bodyTracking.bodies && data.bodyTracking.bodies.length > 0) {
@@ -60,14 +75,16 @@ export class AzureVisionService {
       
       // Map Azure keypoints to our format
       for (const [name, joint] of Object.entries(body.joints)) {
-        keypoints.push({
-          name: this.mapJointNameToOurFormat(name),
-          position: {
-            x: joint.position.x,
-            y: joint.position.y
-          },
-          confidence: joint.confidence
-        });
+        if (joint && typeof joint === 'object' && 'position' in joint && 'confidence' in joint) {
+          keypoints.push({
+            name: this.mapJointNameToOurFormat(name),
+            position: {
+              x: joint.position.x,
+              y: joint.position.y
+            },
+            confidence: joint.confidence
+          });
+        }
       }
     }
     
@@ -88,7 +105,16 @@ export class AzureVisionService {
       'ElbowRight': 'right_elbow',
       'WristLeft': 'left_wrist',
       'WristRight': 'right_wrist',
-      // Add more mappings as needed
+      'HipLeft': 'left_hip',
+      'HipRight': 'right_hip',
+      'KneeLeft': 'left_knee',
+      'KneeRight': 'right_knee',
+      'AnkleLeft': 'left_ankle',
+      'AnkleRight': 'right_ankle',
+      'EyeLeft': 'left_eye',
+      'EyeRight': 'right_eye',
+      'EarLeft': 'left_ear',
+      'EarRight': 'right_ear',
     };
     
     return jointMap[azureJointName] || azureJointName;

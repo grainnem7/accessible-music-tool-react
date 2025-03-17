@@ -36,7 +36,7 @@ export class AzureSpeechService {
     this.recognizer = new SpeechSDK.SpeechRecognizer(this.speechConfig, audioConfig);
     
     // Process speech recognition results
-    this.recognizer.recognized = (s, e) => {
+    this.recognizer.recognized = (s: unknown, e: SpeechSDK.SpeechRecognitionEventArgs) => {
       if (e.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
         const text = e.result.text.toLowerCase().trim();
         console.log(`Speech recognized: ${text}`);
@@ -62,7 +62,7 @@ export class AzureSpeechService {
         this.isListening = true;
         console.log('Speech recognition started');
       },
-      (error) => {
+      (error: any) => {
         console.error('Error starting speech recognition:', error);
         this.isListening = false;
       }
@@ -77,7 +77,7 @@ export class AzureSpeechService {
         this.isListening = false;
         console.log('Speech recognition stopped');
       },
-      (error) => {
+      (error: any) => {
         console.error('Error stopping speech recognition:', error);
       }
     );
