@@ -1,4 +1,4 @@
-// config.ts
+// config.ts 
 // Azure Configuration for accessible music creation tool
 
 export const azureConfig = {
@@ -7,6 +7,11 @@ export const azureConfig = {
     computerVisionKey1: '9ZWwcipd56k45lgE5KYEGMJyGQ5HgfrcDbjaJHta1L4C0Bn671BwJQQJ99BCACYeBjFXJ3w3AAAFACOGlFcE',
     computerVisionKey2: '43nfYXDI17ZvFFsSA88zpH9ohdtwRfLOQDU5TaHLpp0bJa5fFPNUJQQJ99BCACYeBjFXJ3w3AAAFACOGzPB5',
     computerVisionLocation: 'eastus',
+    
+    // Azure Face API configuration
+    faceApiEndpoint: 'https://reactmusicface.cognitiveservices.azure.com/',
+    faceApiKey: 'your-face-api-key-here', // You'll need to get this from Azure
+    faceApiLocation: 'eastus',
     
     // Azure Custom Vision configuration
     customVisionEndpoint: 'https://eastus.api.cognitive.microsoft.com/',
@@ -30,18 +35,18 @@ export const azureConfig = {
     get computerVisionKey() {
       return this.computerVisionKey1;
     }
-  };
+};
   
-  // Function to create Azure API headers
-  export const getAzureHeaders = () => {
+// Function to create Azure API headers
+export const getAzureHeaders = () => {
     return {
       'Ocp-Apim-Subscription-Key': azureConfig.computerVisionKey,
       'Content-Type': 'application/octet-stream'
     };
-  };
+};
   
-  // Function to build Azure API URL with parameters
-  export const buildAzureApiUrl = (endpoint: string, params: Record<string, string>) => {
+// Function to build Azure API URL with parameters
+export const buildAzureApiUrl = (endpoint: string, params: Record<string, string>) => {
     const url = new URL(endpoint, azureConfig.computerVisionEndpoint);
     
     Object.entries(params).forEach(([key, value]) => {
@@ -49,4 +54,4 @@ export const azureConfig = {
     });
     
     return url.toString();
-  };
+};

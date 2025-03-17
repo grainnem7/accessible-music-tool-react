@@ -4,7 +4,7 @@ import WebcamCapture from './WebcamCapture';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import './CalibrationComponent.css';
 import { azureConfig } from '../config';
-import { AzureIntegrationSettings } from './AzureIntegrationSettings';
+import AzureIntegrationSettings from './AzureIntegrationSettings';
 
 interface CalibrationComponentProps {
   detector: MLIntentionDetector;
