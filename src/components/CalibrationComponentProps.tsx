@@ -1,4 +1,4 @@
-import { MLIntentionDetector } from '../utils/MLIntentionDetector';
+import { MLIntentionDetector } from '../utils/IntentionDetection/MLIntentionDetector';
 
 interface CalibrationComponentProps {
   detector: MLIntentionDetector;

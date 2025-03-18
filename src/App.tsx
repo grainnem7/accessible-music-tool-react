@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import WebcamCapture from './components/WebcamCapture';
-import { MLIntentionDetector, MovementInfo } from './utils/MLIntentionDetector';
+import { MLIntentionDetector } from './utils/IntentionDetection/MLIntentionDetector';
 import CalibrationComponent from './components/CalibrationComponent';
 import { SoundEngine, SoundPreset } from './utils/SoundEngine';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import CalibrationComponentProps from './components/CalibrationComponentProps';
 import './App.css';
+import { MovementInfo } from './utils/IntentionDetection/DetectionTypes';
 
 // Define application states
 enum AppState {

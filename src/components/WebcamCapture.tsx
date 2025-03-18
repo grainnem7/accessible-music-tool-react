@@ -1,8 +1,9 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import ReactWebcam from 'react-webcam';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import * as tf from '@tensorflow/tfjs';
 import './WebcamCapture.css';
+import { performanceMonitor } from '../utils/Helpers/PerformanceMonitor';
 
 // Use 'any' to bypass TypeScript errors for now
 const Webcam: any = ReactWebcam;
@@ -12,8 +13,7 @@ interface WebcamCaptureProps {
   showDebugInfo?: boolean;
   highlightIntentional?: boolean;
   intentionalKeypoints?: string[];
-  detector?: any; // Added to support CalibrationComponent
-  onCalibrationComplete?: (userId: string) => void; // Added to support CalibrationComponent
+  frameRate?: number; // Target frame rate, default 30fps
 }
 
 // Skeleton connections mapping for BlazePose
@@ -33,7 +33,6 @@ const POSE_CONNECTIONS = [
   ['right_wrist', 'right_thumb'],
   ['right_wrist', 'right_index'],
   ['right_wrist', 'right_pinky'],
-  // Additional connections from the reference code
   ['nose', 'left_shoulder'], 
   ['nose', 'right_shoulder'],
   ['left_shoulder', 'left_hip'], 
@@ -49,7 +48,8 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
   onPoseDetected,
   showDebugInfo = true,
   highlightIntentional = false,
-  intentionalKeypoints = []
+  intentionalKeypoints = [],
+  frameRate = 30
 }) => {
   const webcamRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -58,58 +58,26 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
   const [isModelLoading, setIsModelLoading] = useState(true);
   const [modelType, setModelType] = useState<'BlazePose' | 'MoveNet'>('MoveNet'); // Start with MoveNet for faster loading
   const [showLabels, setShowLabels] = useState(true);
-  const [poseHistory, setPoseHistory] = useState<poseDetection.Pose[]>([]);
-  const [velocities, setVelocities] = useState<Record<string, number>>({});
   const [containerSize, setContainerSize] = useState({ width: 640, height: 480 });
+  const [frameCount, setFrameCount] = useState(0);
+  const [fps, setFps] = useState(0);
+  const [memoryStats, setMemoryStats] = useState<any>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const animationFrameRef = useRef<number | null>(null);
+  const lastFrameTimeRef = useRef<number>(0);
+  const fpsCounterRef = useRef<number>(0);
+  const fpsTimerRef = useRef<number>(0);
   
-  // Initialize TensorFlow.js
+  // Enable performance monitoring
   useEffect(() => {
-    const setupTensorflow = async () => {
-      try {
-        console.log('Initializing TensorFlow.js...');
-        
-        // Explicitly initialize TensorFlow
-        await tf.ready();
-        
-        // Set a specific backend (webgl is generally more stable than webgpu)
-        if (tf.getBackend() !== 'webgl') {
-          await tf.setBackend('webgl');
-        }
-        
-        // Check if backend is actually set
-        const backend = tf.getBackend();
-        if (backend) {
-          console.log('TensorFlow.js initialized with backend:', backend);
-        } else {
-          // Try another backend if webgl fails
-          await tf.setBackend('cpu');
-          console.log('Fallback to CPU backend');
-        }
-        
-        // Configure memory management for WebGL
-        try {
-          // Use publicAPI to set WebGL texture threshold
-          if (backend === 'webgl') {
-            tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
-          }
-        } catch (e) {
-          console.warn('Could not configure WebGL texture management', e);
-        }
-      } catch (error) {
-        console.error('TensorFlow initialization error:', error);
-        alert('Error initializing TensorFlow.js. Please try reloading the page.');
-      }
-    };
+    performanceMonitor.setEnabled(true);
+    performanceMonitor.setWarningThreshold('poseDetection', 33); // 33ms = 30fps
     
-    setupTensorflow();
-    
-    // Cleanup
     return () => {
-      // Dispose any lingering tensors
-      tf.disposeVariables();
+      performanceMonitor.setEnabled(false);
     };
   }, []);
-
+  
   // Track container size
   useEffect(() => {
     if (!containerRef.current) return;
@@ -132,6 +100,68 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
     };
   }, []);
 
+  // Initialize TensorFlow.js
+  useEffect(() => {
+    const setupTensorflow = async () => {
+      try {
+        console.log('Initializing TensorFlow.js...');
+        
+        await tf.ready();
+        
+        // Try to set WebGL backend first
+        try {
+          await tf.setBackend('webgl');
+          console.log('Using WebGL backend');
+          
+          // Optimize WebGL performance
+          tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
+          tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+          tf.env().set('WEBGL_FLUSH_THRESHOLD', 1);
+        } catch (e) {
+          console.warn('WebGL backend failed, trying CPU', e);
+          await tf.setBackend('cpu');
+          console.log('Using CPU backend (slower)');
+        }
+      } catch (error) {
+        console.error('TensorFlow initialization error:', error);
+      }
+    };
+    
+    setupTensorflow();
+    
+    // Start FPS measuring
+    fpsTimerRef.current = window.setInterval(() => {
+      setFps(fpsCounterRef.current);
+      fpsCounterRef.current = 0;
+    }, 1000);
+    
+    // Memory usage reporting
+    const memoryTimer = window.setInterval(() => {
+      try {
+        const memInfo = tf.memory();
+        setMemoryStats({
+          numTensors: memInfo.numTensors,
+          numBytes: (memInfo.numBytes / (1024 * 1024)).toFixed(2) + ' MB'
+        });
+      } catch (error) {
+        console.warn('Error getting memory info:', error);
+      }
+    }, 5000);
+    
+    // Cleanup
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      
+      clearInterval(fpsTimerRef.current);
+      clearInterval(memoryTimer);
+      
+      // Clean up tensors
+      tf.disposeVariables();
+    };
+  }, []);
+
   // Initialize the pose detector
   useEffect(() => {
     const initializeDetector = async () => {
@@ -143,7 +173,7 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
         
         // Dispose old detector if exists
         if (detector) {
-          detector.dispose();
+          await detector.dispose();
         }
         
         let newDetector;
@@ -188,21 +218,43 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
         detector.dispose();
       }
     };
-  }, [modelType]);
+  }, [modelType, detector]);
 
-  // Run pose detection
+  // Main pose detection loop
   useEffect(() => {
     if (!detector || isModelLoading) return;
     
-    let animationFrameId: number;
-    
-    const detectPose = async () => {
+    const detectPose = async (timestamp: number) => {
       if (
         webcamRef.current &&
         webcamRef.current.video &&
         webcamRef.current.video.readyState === 4
       ) {
+        // FPS throttling - target the specified frame rate
+        const targetFrameInterval = 1000 / frameRate;
+        
+        // Skip frames to maintain target frame rate
+        const elapsed = timestamp - lastFrameTimeRef.current;
+        if (elapsed < targetFrameInterval) {
+          animationFrameRef.current = requestAnimationFrame(detectPose);
+          return;
+        }
+        
+        // Update last frame time
+        lastFrameTimeRef.current = timestamp;
+        
         try {
+          // Skip if already processing a frame (prevents buildup of tasks)
+          if (isProcessing) {
+            animationFrameRef.current = requestAnimationFrame(detectPose);
+            return;
+          }
+          
+          setIsProcessing(true);
+          
+          // Start performance monitoring
+          performanceMonitor.start('poseDetection');
+          
           const video = webcamRef.current.video;
           
           // Detect poses
@@ -212,74 +264,60 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
           });
           
           if (poses && poses.length > 0) {
-            // Ensure canvas dimensions match the video
-            if (canvasRef.current) {
-              const videoWidth = video.videoWidth;
-              const videoHeight = video.videoHeight;
-              
-              // Set canvas size directly
-              canvasRef.current.width = videoWidth;
-              canvasRef.current.height = videoHeight;
-              
-              // Draw poses on canvas
-              drawPoses(poses, videoWidth, videoHeight, intentionalKeypoints);
-            }
-            
-            // Keep a history of poses for velocity calculation
-            setPoseHistory(prev => {
-              const newHistory = [...prev, poses[0]];
-              if (newHistory.length > 30) { // Keep last 30 frames (~1 second)
-                return newHistory.slice(-30);
+            // Update canvas in a more efficient way
+            requestAnimationFrame(() => {
+              if (canvasRef.current) {
+                const videoWidth = video.videoWidth;
+                const videoHeight = video.videoHeight;
+                
+                // Set canvas size directly
+                canvasRef.current.width = videoWidth;
+                canvasRef.current.height = videoHeight;
+                
+                // Draw poses on canvas
+                drawPoses(poses, videoWidth, videoHeight, intentionalKeypoints);
               }
-              return newHistory;
             });
             
-            // Calculate velocities for keypoints
-            if (poseHistory.length >= 2) {
-              const prevPose = poseHistory[poseHistory.length - 1];
-              const currentPose = poses[0];
-              
-              const newVelocities: Record<string, number> = {};
-              
-              currentPose.keypoints.forEach(kp => {
-                if (kp.name) {
-                  const prevKp = prevPose.keypoints.find(p => p.name === kp.name);
-                  if (prevKp && typeof prevKp.x === 'number' && typeof prevKp.y === 'number' && 
-                      typeof kp.x === 'number' && typeof kp.y === 'number') {
-                    const dx = kp.x - prevKp.x;
-                    const dy = kp.y - prevKp.y;
-                    newVelocities[kp.name] = Math.sqrt(dx*dx + dy*dy);
-                  }
-                }
-              });
-              
-              setVelocities(newVelocities);
-            }
-            
-            // Send poses to parent component
+            // Notify parent component
             onPoseDetected(poses);
+          }
+          
+          // Count frame for FPS calculation
+          fpsCounterRef.current += 1;
+          setFrameCount(prev => prev + 1);
+          
+          // End performance monitoring
+          performanceMonitor.end('poseDetection');
+          
+          // Force garbage collection periodically
+          if (frameCount % 100 === 0) {
+            tf.tidy(() => {}); // Clean up unused tensors
           }
         } catch (error) {
           console.error('Error detecting poses:', error);
+        } finally {
+          setIsProcessing(false);
         }
       }
       
       // Continue detection loop
-      animationFrameId = requestAnimationFrame(detectPose);
+      animationFrameRef.current = requestAnimationFrame(detectPose);
     };
     
-    detectPose();
+    // Start detection loop
+    animationFrameRef.current = requestAnimationFrame(detectPose);
     
     // Clean up
     return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [detector, isModelLoading, onPoseDetected, intentionalKeypoints, poseHistory]);
+  }, [detector, isModelLoading, onPoseDetected, intentionalKeypoints, frameCount, frameRate]);
 
   // Draw the detected poses on the canvas
-  const drawPoses = (
+  const drawPoses = useCallback((
     poses: poseDetection.Pose[], 
     width: number, 
     height: number,
@@ -362,10 +400,13 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
           
           ctx.fill();
           
-          // Only add text labels if enabled
-          if (showLabels && keypoint.name) {
+          // Only add text labels if enabled and not too many to avoid clutter
+          if (showLabels && keypoint.name && keypoint.score > 0.5) {
             // Background for text (for better visibility)
-            const labelText = `${keypoint.name}: ${Math.round(keypoint.score * 100)}%${isIntentional ? ' (I)' : ''}`;
+            const labelText = isIntentional 
+              ? `${keypoint.name} ⭐`  // Star for intentional
+              : keypoint.name;
+            
             const textWidth = ctx.measureText(labelText).width;
             
             ctx.fillStyle = isIntentional ? 'rgba(255, 215, 0, 0.7)' : 'rgba(0, 0, 0, 0.7)';
@@ -384,59 +425,17 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
         }
       });
     });
-  };
+  }, [highlightIntentional, showLabels]);
 
   // Switch between pose detection models
-  const switchModelType = () => {
+  const switchModelType = useCallback(() => {
     setModelType(prevType => prevType === 'BlazePose' ? 'MoveNet' : 'BlazePose');
-  };
+  }, []);
 
   // Toggle label visibility
-  const toggleLabels = () => {
+  const toggleLabels = useCallback(() => {
     setShowLabels(prevShowLabels => !prevShowLabels);
-  };
-
-  // Render debug info panel
-  const renderDebugPanel = () => {
-    if (!showDebugInfo || poseHistory.length === 0) return null;
-    
-    const latestPose = poseHistory[poseHistory.length - 1];
-    
-    return (
-      <div style={{
-        position: 'absolute',
-        top: 10,
-        right: 10,
-        background: 'rgba(0,0,0,0.7)',
-        color: 'white',
-        padding: 10,
-        borderRadius: 5,
-        maxHeight: 300,
-        overflow: 'auto',
-        fontSize: 12,
-        zIndex: 30
-      }}>
-        <h3 style={{ margin: '0 0 8px 0' }}>Keypoints & Velocities</h3>
-        {latestPose.keypoints
-          .filter(kp => kp.score && kp.score > 0.5 && kp.name)
-          .map((kp, i) => {
-            const isIntentional = intentionalKeypoints.includes(kp.name || '');
-            return (
-              <div key={i} style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between',
-                marginBottom: '4px',
-                borderBottom: '1px solid rgba(255,255,255,0.2)',
-                backgroundColor: isIntentional ? 'rgba(255, 215, 0, 0.3)' : 'transparent'
-              }}>
-                <span>{kp.name}: {Math.round((kp.score || 0) * 100)}%</span>
-                <span>Vel: {velocities[kp.name || '']?.toFixed(1) || 'N/A'}</span>
-              </div>
-            );
-          })}
-      </div>
-    );
-  };
+  }, []);
 
   return (
     <div 
@@ -499,8 +498,29 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
         }}
       />
       
-      {/* Debug panel */}
-      {renderDebugPanel()}
+      {/* Performance stats */}
+      {showDebugInfo && (
+        <div style={{ 
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          background: 'rgba(0,0,0,0.7)',
+          color: 'white',
+          padding: '10px',
+          borderRadius: '5px',
+          fontSize: '12px',
+          zIndex: 40
+        }}>
+          <div>FPS: {fps}</div>
+          {memoryStats && (
+            <>
+              <div>Tensors: {memoryStats.numTensors}</div>
+              <div>Memory: {memoryStats.numBytes}</div>
+            </>
+          )}
+          <div>Model: {modelType}</div>
+        </div>
+      )}
       
       {/* Controls */}
       <div style={{ 
@@ -523,8 +543,9 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
             cursor: 'pointer',
             fontSize: '14px'
           }}
+          disabled={isModelLoading}
         >
-          Switch to {modelType === 'BlazePose' ? 'MoveNet' : 'BlazePose'} Model
+          Switch Model
         </button>
         
         <button 
@@ -547,4 +568,4 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({
   );
 };
 
-export default WebcamCapture;
+export default React.memo(WebcamCapture);

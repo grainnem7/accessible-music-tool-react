@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MLIntentionDetector } from '../utils/MLIntentionDetector';
+import { MLIntentionDetector } from '../utils/IntentionDetection/MLIntentionDetector';
 import WebcamCapture from './WebcamCapture';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import './CalibrationComponent.css';
@@ -38,6 +38,7 @@ const CalibrationComponent: React.FC<CalibrationComponentProps> = ({
   const [azureProgress, setAzureProgress] = useState<number>(0);
   const [intentionalKeypoints, setIntentionalKeypoints] = useState<string[]>([]);
   const [advancedOptions, setAdvancedOptions] = useState<boolean>(false);
+  const [calibrationError, setCalibrationError] = useState<string>('');
 
   // Initialize calibration duration from detector
   useEffect(() => {
@@ -159,60 +160,69 @@ const CalibrationComponent: React.FC<CalibrationComponentProps> = ({
   
   // Train the model with collected samples
   const trainModel = async () => {
-    // Configure Azure if enabled
-    if (useAzure) {
-      detector.configureAzureServices({
-        apiKey: azureConfig.computerVisionKey,
-        endpoint: azureConfig.computerVisionEndpoint,
-        enabled: true
+    // Reset any previous errors
+    setCalibrationError('');
+    
+    try {
+      // Configure Azure if enabled
+      if (useAzure) {
+        detector.configureAzureServices({
+          apiKey: azureConfig.computerVisionKey,
+          endpoint: azureConfig.computerVisionEndpoint,
+          enabled: true
+        });
+        
+        setModelStatus(prev => ({ ...prev, azureEnabled: true }));
+      }
+      
+      setIsTraining(true);
+      setTrainingProgress(0);
+      
+      // Set up progress tracking
+      detector.setTrainingProgressCallback((progress: number) => {
+        setTrainingProgress(Math.round(progress * 100));
       });
       
-      setModelStatus(prev => ({ ...prev, azureEnabled: true }));
-    }
-    
-    setIsTraining(true);
-    setTrainingProgress(0);
-    
-    // Set up progress tracking
-    detector.setTrainingProgressCallback((progress: number) => {
-      setTrainingProgress(Math.round(progress * 100));
-    });
-    
-    const success = await detector.trainModel();
-    
-    // If Azure is enabled, also train Azure model
-    if (useAzure) {
-      setIsAzureTraining(true);
+      const success = await detector.trainModel();
       
-      try {
-        // Simulate Azure training progress
-        const azureTrainingInterval = setInterval(() => {
-          setAzureProgress(prev => {
-            const nextProgress = prev + Math.random() * 5;
-            return nextProgress >= 100 ? 100 : nextProgress;
-          });
-        }, 300);
-        
-        // Train Azure model
-        const azureSuccess = await detector.trainAzureModel(userId);
-        
-        clearInterval(azureTrainingInterval);
-        setAzureProgress(100);
-        
-        if (!azureSuccess) {
-          alert("Azure training encountered issues. Local model is still available.");
-        }
-      } catch (error) {
-        console.error("Azure training error:", error);
-        alert("Azure training failed. Using local model only.");
-      } finally {
-        setIsAzureTraining(false);
+      if (!success) {
+        setCalibrationError("Training failed. Please try again with more distinct movements.");
+        setIsTraining(false);
+        return;
       }
-    }
-    
-    setIsTraining(false);
-    
-    if (success) {
+      
+      // If Azure is enabled, also train Azure model
+      if (useAzure) {
+        setIsAzureTraining(true);
+        
+        try {
+          // Simulate Azure training progress
+          const azureTrainingInterval = setInterval(() => {
+            setAzureProgress(prev => {
+              const nextProgress = prev + Math.random() * 5;
+              return nextProgress >= 100 ? 100 : nextProgress;
+            });
+          }, 300);
+          
+          // Train Azure model
+          const azureSuccess = await detector.trainAzureModel(userId);
+          
+          clearInterval(azureTrainingInterval);
+          setAzureProgress(100);
+          
+          if (!azureSuccess) {
+            console.warn("Azure training encountered issues. Local model is still available.");
+          }
+        } catch (error) {
+          console.error("Azure training error:", error);
+          // Still continue with local model
+        } finally {
+          setIsAzureTraining(false);
+        }
+      }
+      
+      setIsTraining(false);
+      
       // Save the model for this user
       if (userId) {
         await detector.saveModel(userId);
@@ -221,8 +231,10 @@ const CalibrationComponent: React.FC<CalibrationComponentProps> = ({
       // Update status and move to completion
       setModelStatus(detector.getStatus());
       setCalibrationStep(6); // Complete
-    } else {
-      alert("Training failed. Please try again with more distinct movements.");
+    } catch (error) {
+      console.error("Error in model training:", error);
+      setCalibrationError("An error occurred during training. Please try again.");
+      setIsTraining(false);
     }
   };
   
@@ -239,6 +251,7 @@ const CalibrationComponent: React.FC<CalibrationComponentProps> = ({
     setQualityFeedback('');
     setLastDetectedMovements([]);
     setIntentionalKeypoints([]);
+    setCalibrationError('');
   };
   
   // Handle calibration duration change
@@ -322,10 +335,263 @@ const CalibrationComponent: React.FC<CalibrationComponentProps> = ({
           </div>
         );
         
-      case 1: // Record unintentional movements (resting)
-        // Add other cases for all calibration steps...
+      case 1: // Record unintentional movements (resting position)
+        return (
+          <div className="calibration-step">
+            <h2>Step 1: Record Resting Movements</h2>
+            <p>First, we'll record your natural, unintentional movements while at rest.</p>
+            <p>Simply stand naturally in front of the camera. Try not to make any purposeful movements.</p>
+            <p>This helps establish a baseline for subtle, involuntary movements.</p>
+            
+            {qualityFeedback && (
+              <div className={`quality-feedback ${
+                modelStatus.calibrationQuality > 70 ? 'good' : 
+                modelStatus.calibrationQuality > 40 ? 'medium' : ''
+              }`}>
+                <p>{qualityFeedback}</p>
+              </div>
+            )}
+            
+            <button 
+              onClick={startRecording}
+              disabled={isRecording}
+              className="train-button"
+            >
+              {isRecording ? `Recording... (${countdown}s)` : 'Start Recording'}
+            </button>
+            
+            <button 
+              onClick={() => setCalibrationStep(2)}
+              disabled={isRecording || modelStatus.unintentionalSamples < 5}
+              className="next-button"
+            >
+              Next Step
+            </button>
+          </div>
+        );
         
-      // More case statements for each step...
+      case 2: // Record unintentional movements (casual motion)
+        return (
+          <div className="calibration-step">
+            <h2>Step 2: Record Casual Movements</h2>
+            <p>Now, we'll record some casual, everyday movements that aren't meant to control the music.</p>
+            <p>Move around naturally as if you're having a conversation or casually shifting position.</p>
+            <p>These help the system learn what movements to ignore.</p>
+            
+            {qualityFeedback && (
+              <div className={`quality-feedback ${
+                modelStatus.calibrationQuality > 70 ? 'good' : 
+                modelStatus.calibrationQuality > 40 ? 'medium' : ''
+              }`}>
+                <p>{qualityFeedback}</p>
+              </div>
+            )}
+            
+            <button 
+              onClick={startRecording}
+              disabled={isRecording}
+              className="train-button"
+            >
+              {isRecording ? `Recording... (${countdown}s)` : 'Start Recording'}
+            </button>
+            
+            <button 
+              onClick={() => setCalibrationStep(3)}
+              disabled={isRecording || modelStatus.unintentionalSamples < 20}
+              className="next-button"
+            >
+              Next Step
+            </button>
+          </div>
+        );
+        
+      case 3: // Record intentional movements (sharp/clear gestures)
+        return (
+          <div className="calibration-step">
+            <h2>Step 3: Record Intentional Movements</h2>
+            <p>Now let's record your intentional movements - these will control the music.</p>
+            <p>Make clear, deliberate hand and arm movements that you'd like to use for sound control.</p>
+            <p>Try movements like raising your hands, moving them side to side, or making gestures.</p>
+            
+            {qualityFeedback && (
+              <div className={`quality-feedback ${
+                modelStatus.calibrationQuality > 70 ? 'good' : 
+                modelStatus.calibrationQuality > 40 ? 'medium' : ''
+              }`}>
+                <p>{qualityFeedback}</p>
+              </div>
+            )}
+            
+            <button 
+              onClick={startRecording}
+              disabled={isRecording}
+              className="train-button"
+            >
+              {isRecording ? `Recording... (${countdown}s)` : 'Start Recording'}
+            </button>
+            
+            <button 
+              onClick={() => setCalibrationStep(4)}
+              disabled={isRecording || modelStatus.intentionalSamples < 10}
+              className="next-button"
+            >
+              Next Step
+            </button>
+          </div>
+        );
+        
+      case 4: // Record more intentional movements (varied movements)
+        return (
+          <div className="calibration-step">
+            <h2>Step 4: More Intentional Movements</h2>
+            <p>Let's record some more varied intentional movements.</p>
+            <p>Try different speeds, ranges, and types of movements that you might use.</p>
+            <p>This helps the system learn the full range of your intentional gestures.</p>
+            
+            {qualityFeedback && (
+              <div className={`quality-feedback ${
+                modelStatus.calibrationQuality > 70 ? 'good' : 
+                modelStatus.calibrationQuality > 40 ? 'medium' : ''
+              }`}>
+                <p>{qualityFeedback}</p>
+              </div>
+            )}
+            
+            <button 
+              onClick={startRecording}
+              disabled={isRecording}
+              className="train-button"
+            >
+              {isRecording ? `Recording... (${countdown}s)` : 'Start Recording'}
+            </button>
+            
+            <button 
+              onClick={() => setCalibrationStep(5)}
+              disabled={isRecording || modelStatus.intentionalSamples < 25}
+              className="next-button"
+            >
+              Next Step
+            </button>
+          </div>
+        );
+        
+      case 5: // Train model
+        return (
+          <div className="calibration-step">
+            <h2>Step 5: Training the Model</h2>
+            <p>We're ready to train the model based on your movements!</p>
+            <p>This will create a personalized movement profile that's unique to you.</p>
+            
+            {qualityFeedback && (
+              <div className={`quality-feedback ${
+                modelStatus.calibrationQuality > 70 ? 'good' : 
+                modelStatus.calibrationQuality > 40 ? 'medium' : ''
+              }`}>
+                <p>{qualityFeedback}</p>
+              </div>
+            )}
+            
+            {calibrationError && (
+              <div className="quality-feedback">
+                <p>{calibrationError}</p>
+              </div>
+            )}
+            
+            <div className="training-summary">
+              <p>Calibration Samples:</p>
+              <ul>
+                <li>Intentional movements: {modelStatus.intentionalSamples}</li>
+                <li>Unintentional movements: {modelStatus.unintentionalSamples}</li>
+                <li>Calibration quality: {modelStatus.calibrationQuality}/100</li>
+              </ul>
+            </div>
+            
+            {isTraining && (
+              <div className="training-indicator">
+                <p>Training in progress... Please wait.</p>
+                <div className="progress-container">
+                  <div 
+                    className="progress-bar-training" 
+                    style={{ width: `${trainingProgress}%` }}
+                  ></div>
+                </div>
+                <p>{trainingProgress}% complete</p>
+              </div>
+            )}
+            
+            {isAzureTraining && (
+              <div className="azure-training">
+                <div className="azure-badge">
+                  <span className="azure-icon">A</span>
+                  Azure Training
+                </div>
+                <p>Training Azure Computer Vision model...</p>
+                <div className="progress-container">
+                  <div 
+                    className="progress-bar-azure" 
+                    style={{ width: `${azureProgress}%` }}
+                  ></div>
+                </div>
+                <p>{Math.round(azureProgress)}% complete</p>
+                <p className="azure-note">
+                  Azure training enhances your model with cloud-based AI capabilities.
+                </p>
+              </div>
+            )}
+            
+            <div className="action-buttons">
+              <button 
+                onClick={trainModel}
+                disabled={
+                  isTraining || 
+                  isAzureTraining || 
+                  modelStatus.intentionalSamples < 20 || 
+                  modelStatus.unintentionalSamples < 20
+                }
+                className="train-button"
+              >
+                {(isTraining || isAzureTraining) ? 'Training...' : 'Train Model'}
+              </button>
+              
+              <button 
+                onClick={resetCalibration}
+                disabled={isTraining || isAzureTraining}
+                className="reset-button"
+              >
+                Reset Calibration
+              </button>
+            </div>
+          </div>
+        );
+        
+      case 6: // Complete
+        return (
+          <div className="calibration-complete">
+            <h2>Calibration Complete!</h2>
+            <p>Your personalized movement model has been trained successfully!</p>
+            
+            {useAzure && (
+              <div className="azure-complete">
+                <div className="azure-badge">
+                  <span className="azure-icon">A</span>
+                  Azure AI
+                </div>
+                <p>Your model is enhanced with Azure Computer Vision services.</p>
+              </div>
+            )}
+            
+            <p>You're ready to start creating music with your movements.</p>
+            <p>Your user ID: <strong>{userId}</strong></p>
+            <p>Remember this ID if you want to load your profile in the future.</p>
+            
+            <button 
+              onClick={completeCalibration}
+              className="primary-button"
+            >
+              Start Making Music!
+            </button>
+          </div>
+        );
 
       default:
         return null;
