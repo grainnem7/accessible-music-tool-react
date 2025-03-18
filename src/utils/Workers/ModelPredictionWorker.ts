@@ -1,149 +1,296 @@
 import * as tf from '@tensorflow/tfjs';
 import { InitMessage, PredictMessage, CleanupMessage, PredictionResultMessage, MovementFeatures } from '../IntentionDetection/DetectionTypes';
 
-let model: tf.Sequential | null = null;
+/**
+ * Web Worker for TensorFlow-based prediction
+ * Performs model inference in a background thread
+ */
+
+// TensorFlow model
+let model: tf.LayersModel | null = null;
 let isInitialized = false;
 
+// Keep track of startup time for performance monitoring
 const startTime = Date.now();
 
+// Ensure the worker is registered properly
+console.log('ModelPredictionWorker: Starting initialization');
+
+// Listen for messages from main thread
 self.addEventListener('message', async (event: MessageEvent) => {
   const message = event.data;
-
+  
+  console.log('ModelPredictionWorker: Received message', message.type);
+  
+  // Handle different message types
   switch (message.type) {
     case 'init':
-      await handleInit(message as InitMessage);
+      await handleInit(message);
       break;
-
+      
     case 'predict':
-      handlePredict(message as PredictMessage);
+      handlePredict(message);
       break;
-
+      
     case 'cleanup':
-      handleCleanup(message as CleanupMessage);
+      handleCleanup(message);
       break;
-
+      
     default:
-      console.error('Unknown message type', message.type);
+      console.error('ModelPredictionWorker: Unknown message type', message.type);
   }
 });
 
-async function handleInit(message: InitMessage): Promise<void> {
+/**
+ * Initialize TensorFlow and load model
+ */
+async function handleInit(message: any): Promise<void> {
   try {
+    console.log('ModelPredictionWorker: Initializing TensorFlow...');
+    
+    // Initialize TensorFlow
     await tf.ready();
-
+    
+    // Set preferred backend
     if (message.preferredBackend) {
-      await tf.setBackend(message.preferredBackend);
-      console.log(`Backend set to ${tf.getBackend()}`);
+      try {
+        await tf.setBackend(message.preferredBackend);
+        console.log(`ModelPredictionWorker: Using ${tf.getBackend()} backend`);
+      } catch (error) {
+        console.warn(`ModelPredictionWorker: Failed to set ${message.preferredBackend} backend, using default`);
+      }
     }
-
-    createModel();
-
-    if (message.modelWeights && message.weightSpecs) {
-      const weightMap = tf.io.decodeWeights(message.modelWeights, message.weightSpecs);
-      await model!.loadWeights(weightMap);
-      Object.values(weightMap).forEach(tensor => tensor.dispose());
-      console.log('Model weights loaded');
+    
+    // Create the model if it doesn't exist
+    if (!model) {
+      createModel();
     }
-
+    
+    // If model weights were provided, load them
+    if (message.modelWeights) {
+      try {
+        // Simple approach - directly load weights from array buffer
+        const tensors = message.weightSpecs?.map((spec: any, i: number) => {
+          // Create tensors from specs
+          return tf.tensor(
+            new Float32Array(message.modelWeights.slice(
+              spec.offset || 0, 
+              (spec.offset || 0) + (spec.size || 0) * 4
+            )),
+            spec.shape,
+            spec.dtype
+          );
+        }) || [];
+        
+        if (model && tensors.length > 0) {
+          model.setWeights(tensors);
+          console.log('ModelPredictionWorker: Applied model weights');
+        }
+      } catch (error) {
+        console.error('ModelPredictionWorker: Error loading model weights', error);
+      }
+    }
+    
     isInitialized = true;
-
+    
+    // Send success response
     self.postMessage({
       type: 'initialized',
       id: message.id,
       backend: tf.getBackend(),
-      initTimeMs: Date.now() - startTime,
+      initTimeMs: Date.now() - startTime
     });
   } catch (error) {
-    console.error('Initialization error:', error);
+    console.error('ModelPredictionWorker: Error initializing', error);
+    
+    // Send error response
     self.postMessage({
       type: 'error',
       error: String(error),
-      id: message.id,
+      id: message.id
     });
   }
 }
 
+/**
+ * Create a new model for intention detection
+ */
 function createModel(): void {
-  model = tf.sequential();
-
-  model.add(tf.layers.dense({ units: 64, activation: 'relu', inputShape: [15] }));
-  model.add(tf.layers.dropout({ rate: 0.3 }));
-  model.add(tf.layers.dense({ units: 32, activation: 'relu' }));
-  model.add(tf.layers.dropout({ rate: 0.2 }));
-  model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
-  model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
-
-  model.compile({ optimizer: tf.train.adam(0.0005), loss: 'binaryCrossentropy', metrics: ['accuracy'] });
-
-  console.log('Model created');
+  try {
+    // Create sequential model
+    const sequential = tf.sequential();
+    
+    // Input layer with expanded feature set
+    sequential.add(tf.layers.dense({
+      units: 64,
+      activation: 'relu',
+      inputShape: [15] // Number of features
+    }));
+    
+    // Dropout for regularization
+    sequential.add(tf.layers.dropout({
+      rate: 0.3
+    }));
+    
+    // Hidden layers
+    sequential.add(tf.layers.dense({
+      units: 32,
+      activation: 'relu'
+    }));
+    
+    sequential.add(tf.layers.dropout({
+      rate: 0.2
+    }));
+    
+    sequential.add(tf.layers.dense({
+      units: 16,
+      activation: 'relu'
+    }));
+    
+    // Output layer - binary classification
+    sequential.add(tf.layers.dense({
+      units: 1,
+      activation: 'sigmoid'
+    }));
+    
+    // Compile model
+    sequential.compile({
+      optimizer: tf.train.adam(0.0005),
+      loss: 'binaryCrossentropy',
+      metrics: ['accuracy']
+    });
+    
+    // Assign to model variable
+    model = sequential;
+    
+    console.log('ModelPredictionWorker: Created model');
+  } catch (error) {
+    console.error('ModelPredictionWorker: Error creating model', error);
+    throw error;
+  }
 }
 
-function handlePredict(message: PredictMessage): void {
+/**
+ * Process prediction request
+ */
+function handlePredict(message: any): void {
   try {
-    if (!isInitialized || !model) throw new Error('Model not initialized');
-
-    const prediction = predictWithModel(message.features);
-
+    if (!isInitialized || !model) {
+      throw new Error('Model not initialized');
+    }
+    
+    const { features, id } = message;
+    
+    // Make prediction
+    const prediction = predictWithModel(features);
+    
+    // Send result back to main thread
     const response: PredictionResultMessage = {
       type: 'prediction',
       isIntentional: prediction.isIntentional,
       confidence: prediction.confidence,
-      keypointName: message.features.keypoint,
-      id: message.id,
+      keypointName: features.keypoint,
+      id
     };
-
+    
     self.postMessage(response);
   } catch (error) {
-    console.error('Prediction error:', error);
-    self.postMessage({ type: 'error', error: String(error), id: message.id });
+    console.error('ModelPredictionWorker: Error making prediction', error);
+    
+    // Send error response
+    self.postMessage({
+      type: 'error',
+      error: String(error),
+      id: message.id
+    });
   }
 }
 
-function predictWithModel(features: MovementFeatures): { isIntentional: boolean; confidence: number } {
+/**
+ * Run model inference
+ */
+function predictWithModel(features: MovementFeatures): {isIntentional: boolean, confidence: number} {
+  // Use tf.tidy for automatic memory cleanup
   return tf.tidy(() => {
+    // Transform features to match model input format
     const featureArray = [
       features.velocityX,
       features.velocityY,
       features.acceleration,
       features.jitter,
       features.isSmooth ? 1 : 0,
+      // Direction encoded
       features.direction === 'up' ? 1 : 0,
       features.direction === 'down' ? 1 : 0,
       features.direction === 'left' ? 1 : 0,
       features.direction === 'right' ? 1 : 0,
-      features.magnitudeOfMovement / 100,
+      // Additional features
+      features.magnitudeOfMovement / 100, // Normalize
       features.isReversing ? 1 : 0,
-      features.frequencyOfMovement / 10,
+      // New features
+      features.frequencyOfMovement / 10, // Normalize
       features.steadiness,
       features.patternScore,
-      features.continuity,
+      features.continuity
     ];
-
+    
+    // Create input tensor
     const inputTensor = tf.tensor2d([featureArray]);
-    const outputTensor = model!.predict(inputTensor) as tf.Tensor;
+    
+    // Perform prediction
+    const predictionOutput = model!.predict(inputTensor);
+    
+    // Handle different output types
+    let outputTensor;
+    if (Array.isArray(predictionOutput)) {
+      outputTensor = predictionOutput[0];
+    } else {
+      outputTensor = predictionOutput;
+    }
+    
+    // Get prediction value
     const predictionValue = outputTensor.dataSync()[0];
-
+    
+    // Return prediction result
     return {
-      isIntentional: predictionValue > 0.65,
-      confidence: predictionValue,
+      isIntentional: predictionValue > 0.65, // Threshold
+      confidence: predictionValue
     };
   });
 }
 
-function handleCleanup(message: CleanupMessage): void {
+/**
+ * Clean up resources
+ */
+function handleCleanup(message: any): void {
   try {
+    // Dispose model and tensors
     if (model) {
       model.dispose();
       model = null;
     }
+    
+    // Force garbage collection
     tf.disposeVariables();
-
-    self.postMessage({ type: 'cleaned', id: message.id });
-    console.log('Cleaned up');
+    
+    console.log('ModelPredictionWorker: Cleaned up');
+    
+    // Send success response
+    self.postMessage({
+      type: 'cleaned',
+      id: message.id
+    });
   } catch (error) {
-    console.error('Cleanup error:', error);
-    self.postMessage({ type: 'error', error: String(error), id: message.id });
+    console.error('ModelPredictionWorker: Error cleaning up', error);
+    
+    // Send error response
+    self.postMessage({
+      type: 'error',
+      error: String(error),
+      id: message.id
+    });
   }
 }
 
+// Inform main thread that worker is ready
 self.postMessage({ type: 'ready' });

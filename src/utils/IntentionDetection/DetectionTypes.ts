@@ -121,14 +121,15 @@ export interface PredictionResultMessage extends WorkerMessage {
   keypointName: string;
 }
 
-// For initializing TensorFlow in worker
 export interface InitMessage {
-    id: string;
-    preferredBackend?: string;
-    includeTraining?: boolean;
-    modelWeights?: ArrayBuffer;
-    weightSpecs?: tf.io.WeightsManifestEntry[]; // <-- add this line
-  }
+  id: string;
+  type: 'init';
+  preferredBackend?: string;
+  modelWeights?: ArrayBuffer;
+  weightSpecs?: any[];
+  modelTopology?: any;
+  includeTraining?: boolean;
+}
   
 
 // For cleanup

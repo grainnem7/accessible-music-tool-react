@@ -205,116 +205,128 @@ export class MLIntentionDetector {
    * Process pose data to detect intentional movements
    * This is the main entry point for real-time detection
    */
-  public processPoses(poses: poseDetection.Pose[]): MovementInfo[] {
-    // Start performance tracking
-    performanceMonitor.start('processPoses');
+  /**
+ * Process pose data to detect intentional movements
+ * This is the main entry point for real-time detection
+ */
+public processPoses(poses: poseDetection.Pose[]): MovementInfo[] {
+  // Start performance tracking
+  performanceMonitor.start('processPoses');
+  
+  // Skip frames for performance if needed
+  this.currentFrame = (this.currentFrame + 1) % (this.frameSkip + 1);
+  if (this.currentFrame !== 0 && this.frameSkip > 0) {
+    return []; // Skip this frame
+  }
+  
+  // Don't process if already processing a frame (prevent overlapping)
+  if (this.processingInProgress) {
+    return [];
+  }
+  
+  try {
+    this.processingInProgress = true;
     
-    // Skip frames for performance if needed
-    this.currentFrame = (this.currentFrame + 1) % (this.frameSkip + 1);
-    if (this.currentFrame !== 0 && this.frameSkip > 0) {
-      return []; // Skip this frame
+    // Add to history
+    this.posesHistory.push({
+      poses,
+      timestamp: Date.now()
+    });
+    
+    // Trim history if it gets too long
+    while (this.posesHistory.length > this.historyLength) {
+      this.posesHistory.shift();
     }
     
-    // Don't process if already processing a frame (prevent overlapping)
-    if (this.processingInProgress) {
+    // Need at least a few frames to detect movement
+    if (this.posesHistory.length < 10) {
+      this.processingInProgress = false;
       return [];
     }
     
-    try {
-      this.processingInProgress = true;
+    const movements: MovementInfo[] = [];
+    
+    // Only process if we have poses
+    if (poses.length === 0) {
+      this.processingInProgress = false;
+      return movements;
+    }
+    
+    // Process each tracked keypoint
+    for (const keypointName of TRACKED_KEYPOINTS) {
+      const keypoint = this.findKeypointByName(poses[0], keypointName);
       
-      // Add to history
-      this.posesHistory.push({
-        poses,
-        timestamp: Date.now()
-      });
-      
-      // Trim history if it gets too long
-      while (this.posesHistory.length > this.historyLength) {
-        this.posesHistory.shift();
-      }
-      
-      // Need at least a few frames to detect movement
-      if (this.posesHistory.length < 10) {
-        this.processingInProgress = false;
-        return [];
-      }
-      
-      const movements: MovementInfo[] = [];
-      
-      // Only process if we have poses
-      if (poses.length === 0) {
-        this.processingInProgress = false;
-        return movements;
-      }
-      
-      // Process each tracked keypoint
-      for (const keypointName of TRACKED_KEYPOINTS) {
-        const keypoint = this.findKeypointByName(poses[0], keypointName);
+      if (keypoint && keypoint.score && keypoint.score > this.minConfidence) {
+        // Extract features
+        const features = featureExtractor.extractFeatures(this.posesHistory, keypointName);
         
-        if (keypoint && keypoint.score && keypoint.score > this.minConfidence) {
-          // Extract features
-          const features = this.extractFeatures(keypointName);
-          
-          if (!features) continue;
-          
-          let isIntentional = false;
-          let confidence = 0.5;
-          
-          // If we have a trained model, use it
-          if (this.isModelTrained && this.useMLPrediction) {
+        if (!features) continue;
+        
+        let isIntentional = false;
+        let confidence = 0.5;
+        
+        // If we have a trained model, use it
+        if (this.isModelTrained && this.useMLPrediction) {
+          try {
             const prediction = this.predictWithModel(features);
             isIntentional = prediction.isIntentional;
             confidence = prediction.confidence;
-          } else {
-            // Use heuristic approach
+          } catch (error) {
+            console.warn(`Error using model prediction: ${error}`);
+            // Fallback to heuristic if model prediction fails
             const heuristicResult = this.heuristicIntentionality(features);
             isIntentional = heuristicResult.isIntentional;
             confidence = heuristicResult.confidence;
           }
-          
-          // Apply cooldown to avoid rapid retriggering
-          if (isIntentional && !this.isNotOnCooldown(keypointName)) {
-            isIntentional = false;
-          }
-          
-          // If intentional, update last movement timestamp
-          if (isIntentional) {
-            this.lastIntentionalMovements.set(keypointName, Date.now());
-          }
-          
-          // Calculate velocity magnitude
-          const velocity = Math.sqrt(
-            features.velocityX * features.velocityX + 
-            features.velocityY * features.velocityY
-          );
-          
-          // Only add significant movements to results
-          if (isIntentional || velocity > 5) {
-            movements.push({
-              keypoint: keypointName,
-              isIntentional,
-              velocity,
-              direction: features.direction,
-              confidence
-            });
-          }
+        } else {
+          // Use heuristic approach
+          const heuristicResult = this.heuristicIntentionality(features);
+          isIntentional = heuristicResult.isIntentional;
+          confidence = heuristicResult.confidence;
+        }
+        
+        // Apply cooldown to avoid rapid retriggering
+        if (isIntentional && !this.isNotOnCooldown(keypointName)) {
+          isIntentional = false;
+        }
+        
+        // If intentional, update last movement timestamp
+        if (isIntentional) {
+          this.lastIntentionalMovements.set(keypointName, Date.now());
+        }
+        
+        // Calculate velocity magnitude
+        const velocity = Math.sqrt(
+          features.velocityX * features.velocityX + 
+          features.velocityY * features.velocityY
+        );
+        
+        // Only add significant movements to results
+        if (isIntentional || velocity > 5) {
+          movements.push({
+            keypoint: keypointName,
+            isIntentional,
+            velocity,
+            direction: features.direction,
+            confidence
+          });
         }
       }
-      
-      this.processingInProgress = false;
-      performanceMonitor.end('processPoses');
-      return movements;
-    } catch (error) {
-      this.lastError = `Error processing poses: ${error}`;
-      this.errorCount++;
-      console.error(this.lastError);
-      this.processingInProgress = false;
-      
-      performanceMonitor.end('processPoses');
-      return [];
     }
+    
+    this.processingInProgress = false;
+    performanceMonitor.end('processPoses');
+    return movements;
+  } catch (error) {
+    this.lastError = `Error processing poses: ${error}`;
+    this.errorCount++;
+    console.error(this.lastError);
+    this.processingInProgress = false;
+    
+    performanceMonitor.end('processPoses');
+    return [];
   }
+}
   
   /**
    * Extract features for a keypoint using either worker or local implementation
