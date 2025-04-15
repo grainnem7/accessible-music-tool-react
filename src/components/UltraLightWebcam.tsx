@@ -7,11 +7,15 @@ const Webcam: any = ReactWebcam;
 
 interface UltraLightWebcamProps {
   onMotionDetected: (x: number, y: number, direction: string, velocity: number) => void;
+  mirrored?: boolean; // Add mirroring option with default true
 }
 
 // This component uses simple motion detection with canvas pixel comparison
 // No TensorFlow, no pose detection - just basic movement detection
-const UltraLightWebcam: React.FC<UltraLightWebcamProps> = ({ onMotionDetected }) => {
+const UltraLightWebcam: React.FC<UltraLightWebcamProps> = ({ 
+  onMotionDetected,
+  mirrored = true // Default to mirrored for natural interaction
+}) => {
   const webcamRef = useRef<any>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const prevFrameRef = useRef<ImageData | null>(null);
@@ -82,8 +86,15 @@ const UltraLightWebcam: React.FC<UltraLightWebcamProps> = ({ onMotionDetected })
           canvas.height = video.videoHeight;
         }
         
-        // Draw current frame
+        // Draw current frame (mirrored if needed)
+        ctx.save();
+        if (mirrored) {
+          // Mirror the image by scaling x by -1 and adjusting the drawing position
+          ctx.translate(canvas.width, 0);
+          ctx.scale(-1, 1);
+        }
         ctx.drawImage(video, 0, 0);
+        ctx.restore();
         
         // Get image data
         const currentFrame = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -153,7 +164,12 @@ const UltraLightWebcam: React.FC<UltraLightWebcamProps> = ({ onMotionDetected })
           const centerGridY = GRID_SIZE / 2 - 0.5;
           
           if (Math.abs(maxDiffCell.x - centerGridX) > Math.abs(maxDiffCell.y - centerGridY)) {
-            direction = maxDiffCell.x > centerGridX ? 'right' : 'left';
+            // If mirrored, we need to flip left/right directions
+            if (mirrored) {
+              direction = maxDiffCell.x < centerGridX ? 'right' : 'left';
+            } else {
+              direction = maxDiffCell.x > centerGridX ? 'right' : 'left';
+            }
           } else {
             direction = maxDiffCell.y > centerGridY ? 'down' : 'up';
           }
@@ -161,12 +177,23 @@ const UltraLightWebcam: React.FC<UltraLightWebcamProps> = ({ onMotionDetected })
           // Scale the difference to a reasonable velocity value
           const velocity = Math.min(maxDiffCell.diff, 100);
           
-          // Notify parent component
-          onMotionDetected(centerX, centerY, direction, velocity);
+          // Notify parent component - adjust X for mirroring if needed
+          const adjustedX = mirrored ? canvas.width - centerX : centerX;
           
-          // Highlight the cell with motion
+          onMotionDetected(adjustedX, centerY, direction, velocity);
+          
+          // Highlight the cell with motion (with mirroring adjustment)
+          ctx.save();
           ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
-          ctx.fillRect(maxDiffCell.x * cellWidth, maxDiffCell.y * cellHeight, cellWidth, cellHeight);
+          
+          if (mirrored) {
+            // We need to flip the highlighting to match the mirrored view
+            const mirroredX = GRID_SIZE - 1 - maxDiffCell.x;
+            ctx.fillRect(mirroredX * cellWidth, maxDiffCell.y * cellHeight, cellWidth, cellHeight);
+          } else {
+            ctx.fillRect(maxDiffCell.x * cellWidth, maxDiffCell.y * cellHeight, cellWidth, cellHeight);
+          }
+          ctx.restore();
         }
         
         // Store current frame as previous
@@ -197,6 +224,8 @@ const UltraLightWebcam: React.FC<UltraLightWebcamProps> = ({ onMotionDetected })
           facingMode: "user"
         }}
         className="webcam-video"
+        // Apply CSS mirroring to the video element
+        style={{ transform: mirrored ? 'scaleX(-1)' : 'none' }}
       />
       
       <canvas

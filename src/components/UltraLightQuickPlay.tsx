@@ -9,14 +9,17 @@ interface UltraLightQuickPlayProps {
   onBack: () => void;
 }
 
-// Common mappings from screen regions to keypoints 
-// This is a much simpler approach than full pose detection
+// Enhanced region mappings to make the app more responsive
+// Added more regions in the center/face area for better facial detection
 const REGION_MAPPINGS = [
   { region: 'top-left', keypoint: 'left_shoulder' },
   { region: 'top-right', keypoint: 'right_shoulder' },
   { region: 'middle-left', keypoint: 'left_wrist' },
   { region: 'middle-right', keypoint: 'right_wrist' },
-  { region: 'center', keypoint: 'nose' }
+  { region: 'center', keypoint: 'nose' },
+  { region: 'center-top', keypoint: 'left_eye' },  // New mapping for eye region
+  { region: 'center-bottom', keypoint: 'right_eye' }, // New mapping for other eye
+  { region: 'top-center', keypoint: 'nose' }  // Another mapping for nose area
 ];
 
 const UltraLightQuickPlay: React.FC<UltraLightQuickPlayProps> = ({ 
@@ -28,11 +31,14 @@ const UltraLightQuickPlay: React.FC<UltraLightQuickPlayProps> = ({
   const [presetDescription, setPresetDescription] = useState<string>("");
   const [isSoundOn, setIsSoundOn] = useState<boolean>(true);
   const [lastKeypoint, setLastKeypoint] = useState<string>("");
+  // Add a state for sensitivity
+  const [sensitivity, setSensitivity] = useState<number>(30); // Default threshold
   
   // Refs for values that don't need re-renders
   const isSoundOnRef = useRef<boolean>(true);
   const lastTriggerTimeRef = useRef<Record<string, number>>({});
   const cooldownTimeRef = useRef<number>(300); // ms between sound triggers
+  const sensitivityRef = useRef<number>(30);
 
   // Initialize on mount
   useEffect(() => {
@@ -75,14 +81,21 @@ const UltraLightQuickPlay: React.FC<UltraLightQuickPlayProps> = ({
     };
   }, [soundEngine]);
   
-  // Keep ref in sync with state
+  // Keep refs in sync with state
   useEffect(() => {
     isSoundOnRef.current = isSoundOn;
   }, [isSoundOn]);
 
-  // Handle motion detection
+  useEffect(() => {
+    sensitivityRef.current = sensitivity;
+  }, [sensitivity]);
+
+  // Handle motion detection with adjustments for mirroring
   const handleMotionDetected = (x: number, y: number, direction: string, velocity: number) => {
     if (!isSoundOnRef.current) return;
+    
+    // Lower threshold check using the sensitivity state to make it more customizable
+    if (velocity < sensitivityRef.current) return;
     
     try {
       // Determine which region of the screen had motion
@@ -90,17 +103,39 @@ const UltraLightQuickPlay: React.FC<UltraLightQuickPlayProps> = ({
       const height = 240;
       
       // Simple mapping from screen position to body keypoint
+      // The webcam is now mirrored, so the x coordinates are already flipped
+      // This means right is right and left is left from the user's perspective
       let keypointName: string;
       
-      if (y < height / 3) {
-        // Top third
-        keypointName = x < width / 2 ? 'left_shoulder' : 'right_shoulder';
-      } else if (y < height * 2 / 3) {
-        // Middle third
-        keypointName = x < width / 2 ? 'left_wrist' : 'right_wrist';
-      } else {
-        // Bottom third (or use nose for center regardless of position)
-        keypointName = 'nose';
+      // Enhanced region detection with more center areas for face detection
+      if (y < height / 4) { // Top quarter
+        if (x < width / 3) {
+          keypointName = 'left_shoulder';
+        } else if (x > (width * 2 / 3)) {
+          keypointName = 'right_shoulder';
+        } else {
+          keypointName = 'nose'; // Top center - likely facial movement
+        }
+      } else if (y < height / 2) { // Upper middle
+        if (x < width / 3) {
+          keypointName = 'left_elbow';
+        } else if (x > (width * 2 / 3)) {
+          keypointName = 'right_elbow';
+        } else if (x < width / 2) {
+          keypointName = 'left_eye'; // Left-center area (facial)
+        } else {
+          keypointName = 'right_eye'; // Right-center area (facial)
+        }
+      } else if (y < height * 3 / 4) { // Lower middle
+        if (x < width / 3) {
+          keypointName = 'left_wrist';
+        } else if (x > (width * 2 / 3)) {
+          keypointName = 'right_wrist';
+        } else {
+          keypointName = 'nose'; // Center area - could be nodding
+        }
+      } else { // Bottom quarter
+        keypointName = x < width / 2 ? 'left_hip' : 'right_hip';
       }
       
       // Update UI occasionally (not for every detection)
@@ -200,7 +235,13 @@ const UltraLightQuickPlay: React.FC<UltraLightQuickPlayProps> = ({
     }
   };
 
-  // Super minimal UI
+  // Handle sensitivity change
+  const handleSensitivityChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseInt(e.target.value, 10);
+    setSensitivity(value);
+  };
+
+  // Super minimal UI with added sensitivity control
   return (
     <div className="calibration-container">
       <h1>Quick Play Mode</h1>
@@ -209,7 +250,10 @@ const UltraLightQuickPlay: React.FC<UltraLightQuickPlayProps> = ({
       </p>
       
       <div className="webcam-section" style={{ marginBottom: "20px" }}>
-        <UltraLightWebcam onMotionDetected={handleMotionDetected} />
+        <UltraLightWebcam 
+          onMotionDetected={handleMotionDetected} 
+          mirrored={true} // Ensure mirroring is enabled
+        />
       </div>
       
       <div className="controls-panel">
@@ -231,6 +275,23 @@ const UltraLightQuickPlay: React.FC<UltraLightQuickPlayProps> = ({
         
         <div className="preset-description">
           {presetDescription}
+        </div>
+        
+        {/* Added sensitivity control slider */}
+        <div className="sensitivity-control">
+          <label>Motion Sensitivity: {sensitivity}</label>
+          <input
+            type="range"
+            min="5"
+            max="50"
+            value={sensitivity}
+            onChange={handleSensitivityChange}
+            className="sensitivity-slider"
+          />
+          <div className="sensitivity-labels">
+            <span>More Sensitive</span>
+            <span>Less Sensitive</span>
+          </div>
         </div>
         
         {lastKeypoint && (
@@ -256,8 +317,9 @@ const UltraLightQuickPlay: React.FC<UltraLightQuickPlayProps> = ({
           <ul>
             <li>Move in the <strong>left area</strong> for left hand sounds</li>
             <li>Move in the <strong>right area</strong> for right hand sounds</li>
-            <li>Move in the <strong>center</strong> for special effects</li>
-            <li>Change presets to explore different instruments</li>
+            <li>Move your <strong>face, eyes, or nose</strong> for special effects</li>
+            <li>Adjust the <strong>sensitivity slider</strong> for better response</li>
+            <li>Lower sensitivity (move slider left) to detect smaller movements</li>
           </ul>
           
           <div className={`sound-status ${isSoundOn ? 'on' : 'off'}`}>

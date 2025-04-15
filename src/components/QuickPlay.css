@@ -1,195 +1,211 @@
+/* QuickPlay.css - Updated with sensitivity controls */
+
 .quick-play-description {
-    font-size: 18px;
-    text-align: center;
-    margin-bottom: 20px;
-    color: #3498db;
-  }
-  
-  .quick-play-instructions {
-    margin-top: 20px;
-    background-color: #f5f9ff;
-    padding: 15px;
-    border-radius: 8px;
-    border-left: 4px solid #3498db;
-  }
-  
-  .quick-play-instructions h3 {
-    margin-bottom: 10px;
-    color: #2980b9;
-  }
-  
-  .quick-play-instructions ul {
-    list-style-type: circle;
-    padding-left: 20px;
-  }
-  
-  .quick-play-instructions li {
-    margin-bottom: 8px;
-    line-height: 1.4;
-  }
-  
-  .quick-play-instructions strong {
-    color: #e74c3c;
-  }
-  
-  .sound-status {
-    display: inline-block;
-    padding: 5px 10px;
-    border-radius: 15px;
-    margin-top: 10px;
-    font-weight: bold;
-  }
-  
-  .sound-status.on {
-    background-color: rgba(46, 204, 113, 0.2);
-    color: #27ae60;
-    border: 1px solid #27ae60;
-  }
-  
-  .sound-status.off {
-    background-color: rgba(231, 76, 60, 0.2);
-    color: #c0392b;
-    border: 1px solid #c0392b;
-  }
-  
-  .gesture-card {
-    background-color: white;
-    padding: 10px;
-    border-radius: 5px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-    flex: 1;
-    min-width: 120px;
-    text-align: center;
-  }
-  
-  .gesture-name {
-    font-weight: bold;
-    margin-bottom: 3px;
-  }.quick-play-description {
-    font-size: 18px;
-    text-align: center;
-    margin-bottom: 20px;
-    color: #3498db;
-  }
-  
-  .quick-play-instructions {
-    margin-top: 20px;
-    background-color: #f5f9ff;
-    padding: 15px;
-    border-radius: 8px;
-    border-left: 4px solid #3498db;
-  }
-  
-  .quick-play-instructions h3 {
-    margin-bottom: 10px;
-    color: #2980b9;
-  }
-  
-  .quick-play-instructions ul {
-    list-style-type: circle;
-    padding-left: 20px;
-  }
-  
-  .quick-play-instructions li {
-    margin-bottom: 8px;
-    line-height: 1.4;
-  }
-  
-  .quick-play-instructions strong {
-    color: #e74c3c;
-  }
-  
-  .sound-status {
-    display: inline-block;
-    padding: 5px 10px;
-    border-radius: 15px;
-    margin-top: 10px;
-    font-weight: bold;
-  }
-  
-  .sound-status.on {
-    background-color: rgba(46, 204, 113, 0.2);
-    color: #27ae60;
-    border: 1px solid #27ae60;
-  }
-  
-  .sound-status.off {
-    background-color: rgba(231, 76, 60, 0.2);
-    color: #c0392b;
-    border: 1px solid #c0392b;
-  }
-  
-  .gesture-visualization {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 15px;
-  }
-  
-  .gesture-card {
-    background-color: white;
-    padding: 10px;
-    border-radius: 5px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-    flex: 1;
-    min-width: 120px;
-    text-align: center;
-  }
-  
-  .gesture-icon {
-    font-size: 24px;
-    margin-bottom: 5px;
-    color: #3498db;
-  }
-  
-  .gesture-name {
-    font-weight: bold;
-    margin-bottom: 3px;
-  }
-  
-  .gesture-sound {
-    font-size: 12px;
-    color: #7f8c8d;
-  }
-  
-  .gesture-direction {
-    font-size: 12px;
-    color: #7f8c8d;
-    margin-bottom: 3px;
-  }
-  
-  /* Add animation for sound triggering */
-  @keyframes play-sound {
-    0% { transform: scale(1); opacity: 0.7; }
-    50% { transform: scale(1.05); opacity: 1; }
-    100% { transform: scale(1); opacity: 0.7; }
-  }
-  
-  .playing {
-    animation: play-sound 0.5s ease-in-out;
-    background-color: rgba(52, 152, 219, 0.2);
-  }
-  
-  /* New styles for detection status */
-  .detection-status {
-    margin: 10px 0;
-    padding: 8px 12px;
-    border-radius: 5px;
-    background-color: #f8f9fa;
-    border-left: 3px solid #3498db;
-    font-size: 14px;
-    color: #2c3e50;
-  }
-  
-  /* Webcam status indicator */
-  .webcam-status {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background-color: rgba(0, 0, 0, 0.6);
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    z-index: 20;
-  }
+  font-size: 18px;
+  text-align: center;
+  margin-bottom: 20px;
+  color: #3498db;
+}
+
+.quick-play-instructions {
+  margin-top: 20px;
+  background-color: #f5f9ff;
+  padding: 15px;
+  border-radius: 8px;
+  border-left: 4px solid #3498db;
+}
+
+.quick-play-instructions h3 {
+  margin-bottom: 10px;
+  color: #2980b9;
+}
+
+.quick-play-instructions ul {
+  list-style-type: circle;
+  padding-left: 20px;
+}
+
+.quick-play-instructions li {
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.quick-play-instructions strong {
+  color: #e74c3c;
+}
+
+.sound-status {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 15px;
+  margin-top: 10px;
+  font-weight: bold;
+}
+
+.sound-status.on {
+  background-color: rgba(46, 204, 113, 0.2);
+  color: #27ae60;
+  border: 1px solid #27ae60;
+}
+
+.sound-status.off {
+  background-color: rgba(231, 76, 60, 0.2);
+  color: #c0392b;
+  border: 1px solid #c0392b;
+}
+
+.gesture-visualization {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.gesture-card {
+  background-color: white;
+  padding: 10px;
+  border-radius: 5px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  flex: 1;
+  min-width: 120px;
+  text-align: center;
+}
+
+.gesture-icon {
+  font-size: 24px;
+  margin-bottom: 5px;
+  color: #3498db;
+}
+
+.gesture-name {
+  font-weight: bold;
+  margin-bottom: 3px;
+}
+
+.gesture-sound {
+  font-size: 12px;
+  color: #7f8c8d;
+}
+
+.gesture-direction {
+  font-size: 12px;
+  color: #7f8c8d;
+  margin-bottom: 3px;
+}
+
+/* Add animation for sound triggering */
+@keyframes play-sound {
+  0% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.7; }
+}
+
+.playing {
+  animation: play-sound 0.5s ease-in-out;
+  background-color: rgba(52, 152, 219, 0.2);
+}
+
+/* New styles for detection status */
+.detection-status {
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-radius: 5px;
+  background-color: #f8f9fa;
+  border-left: 3px solid #3498db;
+  font-size: 14px;
+  color: #2c3e50;
+}
+
+/* Webcam status indicator */
+.webcam-status {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background-color: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 20;
+}
+
+/* New styles for the sensitivity control */
+.sensitivity-control {
+  margin: 20px 0;
+  padding: 15px;
+  background-color: #f0f7ff;
+  border-radius: 8px;
+  border: 1px solid #d0e3ff;
+}
+
+.sensitivity-control label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+  color: #2980b9;
+}
+
+.sensitivity-slider {
+  width: 100%;
+  margin: 10px 0;
+  -webkit-appearance: none;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #2ecc71, #e74c3c);
+  outline: none;
+}
+
+.sensitivity-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3498db;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.sensitivity-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #3498db;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  border: none;
+}
+
+.sensitivity-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #7f8c8d;
+}
+
+/* Style for displaying detected movement */
+.motion-detected {
+  margin: 10px 0;
+  padding: 8px 12px;
+  background-color: rgba(46, 204, 113, 0.1);
+  border-left: 3px solid #2ecc71;
+  border-radius: 4px;
+  color: #27ae60;
+  font-weight: bold;
+  animation: highlight-motion 1s ease-out;
+}
+
+@keyframes highlight-motion {
+  0% { background-color: rgba(46, 204, 113, 0.3); }
+  100% { background-color: rgba(46, 204, 113, 0.1); }
+}
+
+/* Webcam with mirroring */
+.webcam-video.mirrored {
+  transform: scaleX(-1);
+}
+
+/* Make sure the canvas processing stays aligned with mirrored video */
+.webcam-canvas.mirrored {
+  transform: scaleX(-1);
+}
