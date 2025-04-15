@@ -195,7 +195,7 @@ const QuickPlayComponent: React.FC<QuickPlayComponentProps> = ({
     <div className="calibration-container">
       <h1>Quick Play Mode</h1>
       <p className="quick-play-description">
-        Move your body to create music! No calibration needed.
+        Move your body to create music!
       </p>
       
       <div className="calibration-layout">
