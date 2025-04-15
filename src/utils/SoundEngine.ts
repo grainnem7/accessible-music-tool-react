@@ -25,6 +25,7 @@ export class SoundEngine {
   private notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
   private activeNotes: Map<string, string> = new Map(); // Track currently active notes
   private isInitialized = false;
+  private initializationPromise: Promise<void> | null = null;
 
   constructor() {
     // Initialize Tone.js instruments
@@ -59,11 +60,67 @@ export class SoundEngine {
 
   // Initialize the audio context (must be called from a user action like a button click)
   public async initialize(): Promise<void> {
-    if (!this.isInitialized) {
-      await Tone.start();
-      console.log('Tone.js audio context started');
-      this.isInitialized = true;
+    // If already initializing, return the existing promise
+    if (this.initializationPromise) {
+      return this.initializationPromise;
     }
+    
+    this.initializationPromise = new Promise<void>(async (resolve, reject) => {
+      try {
+        if (!this.isInitialized || Tone.context.state !== 'running') {
+          console.log('Starting Tone.js audio context...');
+          
+          // First try to resume if the context already exists but is suspended
+          if (Tone.context.state === 'suspended') {
+            await Tone.context.resume();
+            console.log('Resumed existing audio context');
+          }
+          
+          // Start Tone.js audio context if needed
+          await Tone.start();
+          console.log('Tone.js started');
+          
+          // Double check if it's really running
+          if (Tone.context.state !== 'running') {
+            console.log('Audio context still not running, trying again...');
+            await Tone.context.resume();
+          }
+          
+          console.log('Tone.js audio context state:', Tone.context.state);
+          
+          // Play a silent note to fully initialize audio
+          setTimeout(() => {
+            try {
+              this.synth.triggerAttackRelease("C4", 0.01, Tone.now(), 0.01);
+              console.log('Initialization note played');
+            } catch (e) {
+              console.error('Error playing initialization note:', e);
+            }
+          }, 100);
+          
+          // Set up instruments
+          this.synth.toDestination();
+          this.drums.toDestination();
+          this.effectSynth.toDestination();
+          
+          this.isInitialized = true;
+          console.log('Audio fully initialized');
+        }
+        
+        resolve();
+      } catch (error) {
+        console.error('Error initializing audio:', error);
+        this.initializationPromise = null;
+        reject(error);
+      } finally {
+        // Reset promise if completed
+        setTimeout(() => {
+          this.initializationPromise = null;
+        }, 1000);
+      }
+    });
+    
+    return this.initializationPromise;
   }
   
   // Set the gesture-to-sound mappings
@@ -82,7 +139,9 @@ export class SoundEngine {
           { keypoint: 'right_wrist', direction: 'up', soundType: 'note', soundValue: 'C4' },
           { keypoint: 'left_wrist', direction: 'up', soundType: 'chord', soundValue: ['C3', 'E3', 'G3'] },
           { keypoint: 'right_wrist', direction: 'down', soundType: 'note', soundValue: 'G4' },
-          { keypoint: 'left_wrist', direction: 'down', soundType: 'chord', soundValue: ['F3', 'A3', 'C4'] }
+          { keypoint: 'left_wrist', direction: 'down', soundType: 'chord', soundValue: ['F3', 'A3', 'C4'] },
+          { keypoint: 'right_wrist', direction: 'left', soundType: 'note', soundValue: 'E4' },
+          { keypoint: 'right_wrist', direction: 'right', soundType: 'note', soundValue: 'D4' }
         ]
       },
       {
@@ -93,7 +152,9 @@ export class SoundEngine {
           { keypoint: 'right_wrist', direction: 'down', soundType: 'drum', soundValue: 'C2' }, // Kick
           { keypoint: 'left_wrist', direction: 'down', soundType: 'drum', soundValue: 'D2' }, // Snare
           { keypoint: 'right_wrist', direction: 'right', soundType: 'drum', soundValue: 'E2' }, // Hi-hat
-          { keypoint: 'left_wrist', direction: 'right', soundType: 'drum', soundValue: 'F2' } // Clap
+          { keypoint: 'left_wrist', direction: 'right', soundType: 'drum', soundValue: 'F2' }, // Clap
+          { keypoint: 'right_wrist', direction: 'up', soundType: 'drum', soundValue: 'E2' }, // Hi-hat
+          { keypoint: 'left_wrist', direction: 'up', soundType: 'drum', soundValue: 'F2' }  // Clap
         ]
       },
       {
@@ -114,6 +175,18 @@ export class SoundEngine {
             soundType: 'note', 
             soundValue: 'C4', 
             parameter: 'volume'
+          },
+          { 
+            keypoint: 'right_wrist', 
+            direction: 'down', 
+            soundType: 'note', 
+            soundValue: 'G3'
+          },
+          { 
+            keypoint: 'left_wrist', 
+            direction: 'left', 
+            soundType: 'note', 
+            soundValue: 'E3'
           }
         ]
       },
@@ -125,7 +198,9 @@ export class SoundEngine {
           { keypoint: 'right_wrist', direction: 'up', soundType: 'note', soundValue: 'E3' },
           { keypoint: 'left_wrist', direction: 'up', soundType: 'effect', soundValue: 'sweep' },
           { keypoint: 'right_wrist', direction: 'down', soundType: 'effect', soundValue: 'wobble' },
-          { keypoint: 'nose', direction: 'right', soundType: 'note', soundValue: 'G2', parameter: 'filter' }
+          { keypoint: 'nose', direction: 'right', soundType: 'note', soundValue: 'G2', parameter: 'filter' },
+          { keypoint: 'right_wrist', direction: 'left', soundType: 'effect', soundValue: 'arpeggio' },
+          { keypoint: 'left_wrist', direction: 'left', soundType: 'effect', soundValue: 'shimmer' }
         ]
       },
       {
@@ -136,7 +211,9 @@ export class SoundEngine {
           { keypoint: 'right_wrist', direction: 'up', soundType: 'chord', soundValue: ['C4', 'E4', 'G4', 'B4'] },
           { keypoint: 'left_wrist', direction: 'up', soundType: 'chord', soundValue: ['G3', 'B3', 'D4', 'F4'] },
           { keypoint: 'right_shoulder', direction: 'up', soundType: 'note', soundValue: 'C5' },
-          { keypoint: 'left_shoulder', direction: 'up', soundType: 'note', soundValue: 'G4' }
+          { keypoint: 'left_shoulder', direction: 'up', soundType: 'note', soundValue: 'G4' },
+          { keypoint: 'right_wrist', direction: 'down', soundType: 'chord', soundValue: ['D4', 'F4', 'A4'] },
+          { keypoint: 'left_wrist', direction: 'down', soundType: 'chord', soundValue: ['A3', 'C4', 'E4'] }
         ]
       }
     ];
@@ -186,126 +263,199 @@ export class SoundEngine {
   
   // Process a detected movement and trigger appropriate sound
   public processMovement(keypoint: string, isIntentional: boolean, direction: string, velocity: number): void {
-    if (!isIntentional || !this.isInitialized) return;
+    if (!this.isInitialized) {
+      console.log("Warning: Attempting to play sound before initialization");
+      // Try to initialize
+      this.initialize().catch(err => console.error("Failed to initialize during processMovement", err));
+      return;
+    }
     
-    // Find matching mappings
-    const matchingMappings = this.mappings.filter(mapping => 
-      mapping.keypoint === keypoint && 
-      (mapping.direction === direction || mapping.direction === 'any')
-    );
-    
-    matchingMappings.forEach(mapping => {
-      // Normalize velocity to 0-1 range for sound parameters
-      const normalizedVelocity = Math.min(Math.max(velocity / 50, 0), 1);
+    try {
+      // Find matching mappings
+      const matchingMappings = this.mappings.filter(mapping => 
+        mapping.keypoint === keypoint && 
+        (mapping.direction === direction || mapping.direction === 'any')
+      );
       
-      switch (mapping.soundType) {
-        case 'note':
-          this.playNote(mapping.soundValue as string, normalizedVelocity, mapping.parameter, keypoint);
-          break;
-          
-        case 'chord':
-          this.playChord(mapping.soundValue as string[], normalizedVelocity);
-          break;
-          
-        case 'drum':
-          this.playDrum(mapping.soundValue as string, normalizedVelocity);
-          break;
-          
-        case 'effect':
-          this.playEffect(mapping.soundValue as string, normalizedVelocity);
-          break;
+      if (matchingMappings.length === 0) {
+        // If no exact match, try to find any mapping for this keypoint
+        const anyDirectionMappings = this.mappings.filter(mapping => 
+          mapping.keypoint === keypoint
+        );
+        
+        if (anyDirectionMappings.length > 0) {
+          // Take the first mapping for this keypoint
+          const mapping = anyDirectionMappings[0];
+          console.log(`Playing sound for ${keypoint} (using fallback mapping) with velocity ${velocity}`);
+          this.playSound(mapping, velocity);
+          return;
+        }
+        
+        // If still no match, play a default sound based on keypoint type
+        console.log(`Playing default sound for ${keypoint} ${direction}`);
+        
+        if (keypoint.includes('wrist')) {
+          // Default piano notes for wrists
+          const note = keypoint.includes('right') ? 'C4' : 'G3';
+          this.synth.triggerAttackRelease(note, "8n", Tone.now(), Math.min(velocity / 30, 1));
+        } else if (keypoint.includes('shoulder')) {
+          // Default bass notes for shoulders
+          const note = keypoint.includes('right') ? 'C2' : 'G2';
+          this.synth.triggerAttackRelease(note, "4n", Tone.now(), Math.min(velocity / 30, 1));
+        } else {
+          // Default effect for other keypoints
+          this.effectSynth.triggerAttackRelease("C3", "8n", Tone.now(), Math.min(velocity / 30, 1));
+        }
+      } else {
+        // Play sounds for all matching mappings
+        matchingMappings.forEach(mapping => {
+          console.log(`Playing sound for ${keypoint} ${direction} with velocity ${velocity} (mapped sound)`);
+          this.playSound(mapping, velocity);
+        });
       }
-    });
+    } catch (error) {
+      console.error('Error processing movement:', error);
+      // Fallback sound if error occurs
+      try {
+        this.synth.triggerAttackRelease("C4", "8n", Tone.now(), 0.5);
+      } catch (e) {
+        console.error('Even fallback sound failed:', e);
+      }
+    }
+  }
+  
+  // Abstracted sound playing logic
+  private playSound(mapping: SoundMapping, velocity: number): void {
+    // Normalize velocity to 0-1 range for sound parameters
+    const normalizedVelocity = Math.min(Math.max(velocity / 50, 0), 1);
+    
+    switch (mapping.soundType) {
+      case 'note':
+        this.playNote(mapping.soundValue as string, normalizedVelocity, mapping.parameter, mapping.keypoint);
+        break;
+        
+      case 'chord':
+        this.playChord(mapping.soundValue as string[], normalizedVelocity);
+        break;
+        
+      case 'drum':
+        this.playDrum(mapping.soundValue as string, normalizedVelocity);
+        break;
+        
+      case 'effect':
+        this.playEffect(mapping.soundValue as string, normalizedVelocity);
+        break;
+    }
   }
   
   // Play a single note
   private playNote(note: string, velocity: number, parameter?: string, keypoint?: string): void {
-    // If this is a parameter control (like theremin mode)
-    if (parameter) {
-      switch (parameter) {
-        case 'pitch':
-          // Map y position to pitch in a scale
-          const octave = Math.floor(velocity * 3) + 3; // Map to octaves 3-5
-          const noteIndex = Math.floor(velocity * 12) % 12;
-          const pitchNote = `${this.notes[noteIndex]}${octave}`;
-          
-          // If we already have a note playing for this keypoint, stop it
-          const currentNote = this.activeNotes.get(keypoint || '');
-          if (currentNote) {
-            this.synth.triggerRelease(currentNote);
-          }
-          
-          // Play new note
-          this.synth.triggerAttack(pitchNote, Tone.now(), 0.5);
-          this.activeNotes.set(keypoint || '', pitchNote);
-          break;
-          
-        case 'volume':
-          // Map position to volume
-          this.synth.volume.value = Tone.gainToDb(velocity);
-          break;
-          
-        case 'filter':
-          // Map position to filter frequency
-          const filterFreq = 100 + (velocity * 10000);
-          this.filter.frequency.value = filterFreq;
-          break;
-          
-        case 'tempo':
-          // Map position to tempo (BPM)
-          const bpm = 60 + (velocity * 120); // 60-180 BPM
-          Tone.Transport.bpm.value = bpm;
-          break;
+    try {
+      // If this is a parameter control (like theremin mode)
+      if (parameter) {
+        switch (parameter) {
+          case 'pitch':
+            // Map y position to pitch in a scale
+            const octave = Math.floor(velocity * 3) + 3; // Map to octaves 3-5
+            const noteIndex = Math.floor(velocity * 12) % 12;
+            const pitchNote = `${this.notes[noteIndex]}${octave}`;
+            
+            // If we already have a note playing for this keypoint, stop it
+            const currentNote = this.activeNotes.get(keypoint || '');
+            if (currentNote) {
+              this.synth.triggerRelease(currentNote);
+            }
+            
+            // Play new note
+            this.synth.triggerAttack(pitchNote, Tone.now(), 0.5);
+            this.activeNotes.set(keypoint || '', pitchNote);
+            break;
+            
+          case 'volume':
+            // Map position to volume
+            this.synth.volume.value = Tone.gainToDb(velocity);
+            break;
+            
+          case 'filter':
+            // Map position to filter frequency
+            const filterFreq = 100 + (velocity * 10000);
+            this.filter.frequency.value = filterFreq;
+            break;
+            
+          case 'tempo':
+            // Map position to tempo (BPM)
+            const bpm = 60 + (velocity * 120); // 60-180 BPM
+            Tone.Transport.bpm.value = bpm;
+            break;
+        }
+      } else {
+        // Just play the note once
+        console.log(`Playing note: ${note} with velocity ${velocity}`);
+        this.synth.triggerAttackRelease(note, "8n", Tone.now(), velocity);
       }
-    } else {
-      // Just play the note once
-      this.synth.triggerAttackRelease(note, "8n", Tone.now(), velocity);
+    } catch (error) {
+      console.error('Error playing note:', error, note);
     }
   }
   
   // Play a chord
   private playChord(notes: string[], velocity: number): void {
-    this.synth.triggerAttackRelease(notes, "4n", Tone.now(), velocity);
+    try {
+      console.log(`Playing chord: ${notes.join(', ')} with velocity ${velocity}`);
+      this.synth.triggerAttackRelease(notes, "4n", Tone.now(), velocity);
+    } catch (error) {
+      console.error('Error playing chord:', error, notes);
+    }
   }
   
   // Play a drum sound
   private playDrum(note: string, velocity: number): void {
-    this.drums.triggerAttackRelease(note, "8n", Tone.now(), velocity);
+    try {
+      console.log(`Playing drum: ${note} with velocity ${velocity}`);
+      this.drums.triggerAttackRelease(note, "8n", Tone.now(), velocity);
+    } catch (error) {
+      console.error('Error playing drum:', error, note);
+    }
   }
   
   // Play a special effect
   private playEffect(effect: string, intensity: number): void {
-    switch (effect) {
-      case 'sweep':
-        this.effectSynth.triggerAttackRelease("C3", "8n", Tone.now(), intensity);
-        this.filter.frequency.rampTo(100 + (intensity * 5000), 0.5);
-        break;
-        
-      case 'wobble':
-        this.effectSynth.modulationIndex.value = 10 * intensity;
-        this.effectSynth.triggerAttackRelease("C2", "4n", Tone.now(), intensity);
-        break;
-        
-      case 'arpeggio':
-        const notes = ['C4', 'E4', 'G4', 'B4', 'C5'];
-        for (let i = 0; i < notes.length; i++) {
-          this.synth.triggerAttackRelease(
-            notes[i], 
-            "16n", 
-            Tone.now() + (i * 0.1), 
-            intensity
-          );
-        }
-        break;
-        
-      case 'shimmer':
-        this.effectSynth.harmonicity.value = 3;
-        this.reverb.decay = 4;
-        this.effectSynth.triggerAttackRelease("G4", "2n", Tone.now(), intensity * 0.7);
-        break;
-        
-      default:
-        this.effectSynth.triggerAttackRelease("C4", "8n", Tone.now(), intensity);
+    try {
+      console.log(`Playing effect: ${effect} with intensity ${intensity}`);
+      switch (effect) {
+        case 'sweep':
+          this.effectSynth.triggerAttackRelease("C3", "8n", Tone.now(), intensity);
+          this.filter.frequency.rampTo(100 + (intensity * 5000), 0.5);
+          break;
+          
+        case 'wobble':
+          this.effectSynth.modulationIndex.value = 10 * intensity;
+          this.effectSynth.triggerAttackRelease("C2", "4n", Tone.now(), intensity);
+          break;
+          
+        case 'arpeggio':
+          const notes = ['C4', 'E4', 'G4', 'B4', 'C5'];
+          for (let i = 0; i < notes.length; i++) {
+            this.synth.triggerAttackRelease(
+              notes[i], 
+              "16n", 
+              Tone.now() + (i * 0.1), 
+              intensity
+            );
+          }
+          break;
+          
+        case 'shimmer':
+          this.effectSynth.harmonicity.value = 3;
+          this.reverb.decay = 4;
+          this.effectSynth.triggerAttackRelease("G4", "2n", Tone.now(), intensity * 0.7);
+          break;
+          
+        default:
+          this.effectSynth.triggerAttackRelease("C4", "8n", Tone.now(), intensity);
+      }
+    } catch (error) {
+      console.error('Error playing effect:', error, effect);
     }
   }
   
@@ -339,6 +489,22 @@ export class SoundEngine {
   // Check if the audio context is running
   public isAudioRunning(): boolean {
     return this.isInitialized && Tone.context.state === 'running';
+  }
+  
+  // Play a test tone to verify audio is working
+  public playTestTone(): void {
+    if (this.isInitialized) {
+      console.log("Playing test tone");
+      this.synth.triggerAttackRelease("C4", "8n", Tone.now(), 0.7);
+    } else {
+      console.log("Cannot play test tone - audio not initialized");
+      this.initialize()
+        .then(() => {
+          this.synth.triggerAttackRelease("C4", "8n", Tone.now(), 0.7);
+          console.log("Test tone played after initialization");
+        })
+        .catch(err => console.error("Failed to initialize for test tone", err));
+    }
   }
   
   // Custom mapping creation helper

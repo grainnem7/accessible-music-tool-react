@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import WebcamCapture from './components/WebcamCapture';
 import { MLIntentionDetector, MovementInfo } from './utils/MLIntentionDetector';
 import CalibrationComponent from './components/CalibrationComponent';
+import QuickPlayComponent from './components/QuickPlayComponent';
 import { SoundEngine, SoundPreset } from './utils/SoundEngine';
 import * as poseDetection from '@tensorflow-models/pose-detection';
 import CalibrationComponentProps from './components/CalibrationComponentProps';
@@ -12,7 +13,8 @@ enum AppState {
   Welcome = 'welcome',
   Calibration = 'calibration',
   Performance = 'performance',
-  Settings = 'settings'
+  Settings = 'settings',
+  QuickPlay = 'quickplay' // New state for quick play mode
 }
 
 const App: React.FC = () => {
@@ -36,14 +38,18 @@ const App: React.FC = () => {
   // Initialize sounds when user loads app
   const initializeAudio = useCallback(async () => {
     try {
-      await soundEngine.initialize();
-      soundEngine.loadPreset(selectedPreset);
-      setIsSoundInitialized(true);
+      if (!isSoundInitialized) {
+        console.log("Initializing audio...");
+        await soundEngine.initialize();
+        soundEngine.loadPreset(selectedPreset);
+        setIsSoundInitialized(true);
+        console.log("Audio initialized successfully!");
+      }
     } catch (err) {
       console.error('Failed to initialize audio:', err);
-      alert('Unable to initialize audio. Please check your browser settings.');
+      alert('Unable to initialize audio. Please check your browser settings and make sure you clicked on the page first.');
     }
-  }, [soundEngine, selectedPreset]);
+  }, [soundEngine, selectedPreset, isSoundInitialized]);
 
   // Handle pose detection results
   const handlePoseDetected = useCallback((poses: poseDetection.Pose[]) => {
@@ -105,12 +111,39 @@ const App: React.FC = () => {
             <div className="action-buttons">
               <button 
                 className="primary-button"
+                onClick={async () => {
+                  try {
+                    console.log("Starting Quick Play mode...");
+                    await initializeAudio();
+                    
+                    // Double-check that audio is really initialized
+                    if (!soundEngine.isAudioRunning()) {
+                      console.log("Audio not fully initialized, trying again...");
+                      await soundEngine.initialize();
+                    }
+                    
+                    // Play a test note to ensure audio is working
+                    soundEngine.processMovement('right_wrist', true, 'up', 50);
+                    console.log("Audio initialized for Quick Play");
+                    
+                    setAppState(AppState.QuickPlay);
+                  } catch (err) {
+                    console.error("Error initializing audio for Quick Play:", err);
+                    alert("Please click on the screen first to allow audio playback, then try again.");
+                  }
+                }}
+              >
+                Quick Play Mode
+              </button>
+              
+              <button 
+                className="primary-button"
                 onClick={() => {
                   initializeAudio();
                   setAppState(AppState.Calibration);
                 }}
               >
-                New User Calibration
+                Calibration Mode
               </button>
               
               <div className="returning-user">
@@ -147,16 +180,16 @@ const App: React.FC = () => {
           </div>
         );
         
-        case AppState.Calibration:
-          return (
-            <div className="calibration-screen">
-              <h1>Movement Calibration</h1>
-              {/* Use type assertion to bypass TypeScript error */}
-              <CalibrationComponent 
-                {...{detector, onCalibrationComplete: handleCalibrationComplete} as any} 
-              />
-            </div>
-          );
+      case AppState.Calibration:
+        return (
+          <div className="calibration-screen">
+            <h1>Movement Calibration</h1>
+            <CalibrationComponent 
+              detector={detector}
+              onCalibrationComplete={handleCalibrationComplete}
+            />
+          </div>
+        );
         
       case AppState.Performance:
         return (
@@ -193,6 +226,9 @@ const App: React.FC = () => {
                 <button onClick={() => setShowDebugInfo(!showDebugInfo)}>
                   {showDebugInfo ? 'Hide' : 'Show'} Debug Info
                 </button>
+                <button onClick={() => setAppState(AppState.Welcome)}>
+                  Back to Menu
+                </button>
               </div>
               
               {showDebugInfo && (
@@ -211,6 +247,14 @@ const App: React.FC = () => {
               )}
             </div>
           </div>
+        );
+        
+      case AppState.QuickPlay:
+        return (
+          <QuickPlayComponent 
+            soundEngine={soundEngine}
+            onBack={() => setAppState(AppState.Welcome)} 
+          />
         );
         
       case AppState.Settings:
@@ -239,21 +283,23 @@ const App: React.FC = () => {
                   step="0.1" 
                   defaultValue="0.3"
                   onChange={(e) => {
-                    // Add function to adjust reverb
+                    const value = parseFloat(e.target.value);
+                    soundEngine.setReverbAmount(value);
                   }}
                 />
               </div>
               
               <div className="form-group">
-                <label>Response Sensitivity:</label>
+                <label>Volume:</label>
                 <input 
                   type="range" 
-                  min="1" 
-                  max="10" 
-                  step="1" 
-                  defaultValue="5"
+                  min="0" 
+                  max="1" 
+                  step="0.1" 
+                  defaultValue="0.7"
                   onChange={(e) => {
-                    // Add function to adjust sensitivity
+                    const value = parseFloat(e.target.value);
+                    soundEngine.setVolume(value);
                   }}
                 />
               </div>
