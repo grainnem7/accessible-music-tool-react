@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/accessible-music-tool-react/static/css/main.27c7a1f9.css",
+    "main.js": "/accessible-music-tool-react/static/js/main.7f9f668b.js",
+    "static/js/453.55a36ec9.chunk.js": "/accessible-music-tool-react/static/js/453.55a36ec9.chunk.js",
+    "index.html": "/accessible-music-tool-react/index.html",
+    "main.27c7a1f9.css.map": "/accessible-music-tool-react/static/css/main.27c7a1f9.css.map",
+    "main.7f9f668b.js.map": "/accessible-music-tool-react/static/js/main.7f9f668b.js.map",
+    "453.55a36ec9.chunk.js.map": "/accessible-music-tool-react/static/js/453.55a36ec9.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.27c7a1f9.css",
+    "static/js/main.7f9f668b.js"
+  ]
+}
