@@ -1,0 +1,48 @@
+/* Sound Visualizer CSS */
+.sound-visualizer-container {
+    margin: 15px 0;
+    padding: 10px;
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 10px;
+    text-align: center;
+  }
+  
+  .sound-visualizer {
+    width: 100%;
+    max-width: 300px;
+    height: 60px;
+    border-radius: 5px;
+    background-color: rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+  }
+  
+  .sound-visualizer.active {
+    box-shadow: 0 0 10px rgba(46, 204, 113, 0.5);
+  }
+  
+  .sound-visualizer.inactive {
+    opacity: 0.7;
+  }
+  
+  .visualizer-label {
+    margin-top: 5px;
+    font-size: 12px;
+    color: #7f8c8d;
+    transition: all 0.3s ease;
+  }
+  
+  .sound-visualizer.active + .visualizer-label {
+    color: #2ecc71;
+    font-weight: bold;
+  }
+  
+  /* Add a subtle animation for inactive state */
+  @keyframes pulse-inactive {
+    0% { opacity: 0.5; }
+    50% { opacity: 0.7; }
+    100% { opacity: 0.5; }
+  }
+  
+  .sound-visualizer.inactive {
+    animation: pulse-inactive 2s infinite ease-in-out;
+  }
