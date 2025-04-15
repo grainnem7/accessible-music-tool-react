@@ -2,10 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import WebcamCapture from './components/WebcamCapture';
 import { MLIntentionDetector, MovementInfo } from './utils/MLIntentionDetector';
 import CalibrationComponent from './components/CalibrationComponent';
-import QuickPlayComponent from './components/QuickPlayComponent';
+import UltraLightQuickPlay from './components/UltraLightQuickPlay';
 import { SoundEngine, SoundPreset } from './utils/SoundEngine';
 import * as poseDetection from '@tensorflow-models/pose-detection';
-import CalibrationComponentProps from './components/CalibrationComponentProps';
 import './App.css';
 
 // Define application states
@@ -14,7 +13,7 @@ enum AppState {
   Calibration = 'calibration',
   Performance = 'performance',
   Settings = 'settings',
-  QuickPlay = 'quickplay' // New state for quick play mode
+  QuickPlay = 'quickplay'
 }
 
 const App: React.FC = () => {
@@ -38,18 +37,14 @@ const App: React.FC = () => {
   // Initialize sounds when user loads app
   const initializeAudio = useCallback(async () => {
     try {
-      if (!isSoundInitialized) {
-        console.log("Initializing audio...");
-        await soundEngine.initialize();
-        soundEngine.loadPreset(selectedPreset);
-        setIsSoundInitialized(true);
-        console.log("Audio initialized successfully!");
-      }
+      await soundEngine.initialize();
+      soundEngine.loadPreset(selectedPreset);
+      setIsSoundInitialized(true);
     } catch (err) {
       console.error('Failed to initialize audio:', err);
-      alert('Unable to initialize audio. Please check your browser settings and make sure you clicked on the page first.');
+      alert('Unable to initialize audio. Please check your browser settings.');
     }
-  }, [soundEngine, selectedPreset, isSoundInitialized]);
+  }, [soundEngine, selectedPreset]);
 
   // Handle pose detection results
   const handlePoseDetected = useCallback((poses: poseDetection.Pose[]) => {
@@ -113,23 +108,10 @@ const App: React.FC = () => {
                 className="primary-button"
                 onClick={async () => {
                   try {
-                    console.log("Starting Quick Play mode...");
                     await initializeAudio();
-                    
-                    // Double-check that audio is really initialized
-                    if (!soundEngine.isAudioRunning()) {
-                      console.log("Audio not fully initialized, trying again...");
-                      await soundEngine.initialize();
-                    }
-                    
-                    // Play a test note to ensure audio is working
-                    soundEngine.processMovement('right_wrist', true, 'up', 50);
-                    console.log("Audio initialized for Quick Play");
-                    
                     setAppState(AppState.QuickPlay);
                   } catch (err) {
-                    console.error("Error initializing audio for Quick Play:", err);
-                    alert("Please click on the screen first to allow audio playback, then try again.");
+                    console.error("Error starting Quick Play mode:", err);
                   }
                 }}
               >
@@ -251,7 +233,7 @@ const App: React.FC = () => {
         
       case AppState.QuickPlay:
         return (
-          <QuickPlayComponent 
+          <UltraLightQuickPlay 
             soundEngine={soundEngine}
             onBack={() => setAppState(AppState.Welcome)} 
           />

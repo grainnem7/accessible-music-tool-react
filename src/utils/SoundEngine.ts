@@ -221,13 +221,17 @@ export class SoundEngine {
   
   // Load a preset by name
   public loadPreset(presetName: string): void {
+    console.log(`Loading preset: ${presetName}`);
+    
     const preset = this.getPresets().find(p => p.name === presetName);
     if (preset) {
       this.setMappings(preset.mappings);
       
       // Change synth settings based on preset
       if (preset.instrument === 'piano') {
+        console.log('Configuring piano settings');
         this.synth.set({
+          oscillator: { type: 'triangle' },
           envelope: {
             attack: 0.01,
             decay: 0.1,
@@ -235,8 +239,31 @@ export class SoundEngine {
             release: 2
           }
         });
-      } else if (preset.instrument === 'electronic') {
+        this.reverb.decay = 1;
+        this.filter.frequency.value = 5000;
+        // Play a test note to confirm settings
+        this.synth.triggerAttackRelease("C4", "16n", Tone.now(), 0.5);
+        
+      } else if (preset.instrument === 'drums') {
+        console.log('Configuring drum settings');
         this.synth.set({
+          oscillator: { type: 'square' },
+          envelope: {
+            attack: 0.001,
+            decay: 0.1,
+            sustain: 0.1,
+            release: 0.1
+          }
+        });
+        this.reverb.decay = 0.5;
+        this.filter.frequency.value = 8000;
+        // Play a test drum sound
+        this.drums.triggerAttackRelease("C2", "16n", Tone.now(), 0.5);
+        
+      } else if (preset.instrument === 'electronic') {
+        console.log('Configuring electronic settings');
+        this.synth.set({
+          oscillator: { type: 'sawtooth' },
           envelope: {
             attack: 0.05,
             decay: 0.2,
@@ -244,9 +271,31 @@ export class SoundEngine {
             release: 0.5
           }
         });
+        this.effectSynth.harmonicity.value = 3;
         this.filter.frequency.value = 2000;
-      } else if (preset.instrument === 'orchestral') {
+        // Play a test electronic sound
+        this.effectSynth.triggerAttackRelease("C3", "16n", Tone.now(), 0.5);
+        
+      } else if (preset.instrument === 'theremin') {
+        console.log('Configuring theremin settings');
         this.synth.set({
+          oscillator: { type: 'sine' },
+          envelope: {
+            attack: 0.1,
+            decay: 0.3,
+            sustain: 0.9,
+            release: 1.5
+          }
+        });
+        this.filter.frequency.value = 3000;
+        this.synth.volume.value = -10;
+        // Play a test theremin sound
+        this.synth.triggerAttackRelease("G4", "8n", Tone.now(), 0.3);
+        
+      } else if (preset.instrument === 'orchestral') {
+        console.log('Configuring orchestral settings');
+        this.synth.set({
+          oscillator: { type: 'sine' },
           envelope: {
             attack: 0.1,
             decay: 0.3,
@@ -255,14 +304,21 @@ export class SoundEngine {
           }
         });
         this.reverb.decay = 4;
+        this.filter.frequency.value = 4000;
+        // Play a test orchestral sound
+        this.synth.triggerAttackRelease(["C4", "E4", "G4"], "16n", Tone.now(), 0.4);
       }
       
-      console.log(`Loaded preset: ${presetName}`);
+      console.log(`Loaded preset: ${presetName} (${preset.instrument})`);
+    } else {
+      console.error(`Could not find preset: ${presetName}`);
     }
   }
   
   // Process a detected movement and trigger appropriate sound
   public processMovement(keypoint: string, isIntentional: boolean, direction: string, velocity: number): void {
+    console.log(`Processing movement: ${keypoint} ${direction} (velocity: ${velocity})`);
+    
     if (!this.isInitialized) {
       console.log("Warning: Attempting to play sound before initialization");
       // Try to initialize
@@ -278,6 +334,8 @@ export class SoundEngine {
       );
       
       if (matchingMappings.length === 0) {
+        console.log(`No exact mapping found for ${keypoint} ${direction}`);
+        
         // If no exact match, try to find any mapping for this keypoint
         const anyDirectionMappings = this.mappings.filter(mapping => 
           mapping.keypoint === keypoint
@@ -309,7 +367,7 @@ export class SoundEngine {
       } else {
         // Play sounds for all matching mappings
         matchingMappings.forEach(mapping => {
-          console.log(`Playing sound for ${keypoint} ${direction} with velocity ${velocity} (mapped sound)`);
+          console.log(`Playing sound for ${keypoint} ${direction} with velocity ${velocity} (mapped sound: ${mapping.soundType})`);
           this.playSound(mapping, velocity);
         });
       }
@@ -328,6 +386,8 @@ export class SoundEngine {
   private playSound(mapping: SoundMapping, velocity: number): void {
     // Normalize velocity to 0-1 range for sound parameters
     const normalizedVelocity = Math.min(Math.max(velocity / 50, 0), 1);
+    
+    console.log(`Playing ${mapping.soundType} sound: ${mapping.soundValue} with velocity ${normalizedVelocity}`);
     
     switch (mapping.soundType) {
       case 'note':
